@@ -18,49 +18,133 @@ const int MISSILE_HEIGHT = 15;
 const int CANNON_SPEED = 3;
 const int HELICOPTER_SPEED = 3;
 const int MISSILE_SPEED = 5;
-const int COOLDOWN_TIME = 3000;
+const int COOLDOWN_TIME = 2000;
+const int MAX_MISSILES = 10;
 
 // Mutex para controlar o acesso à renderização da tela
 pthread_mutex_t renderMutex = PTHREAD_MUTEX_INITIALIZER;
 // Mutex para controlar as posições dos canhões
 pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Guarda as informações dos objetos
-typedef struct {
-    SDL_Rect rect;
-    int speed;
-} RectangleInfo;
-
 // Guarda as informações dos mísseis
 typedef struct {
     SDL_Rect rect;
     int speed;
     bool active;
-    Uint32 lastShotTime;
     double angle;
-    RectangleInfo* cannon;
+    pthread_t thread;
 } MissileInfo;
+
+// Guarda as informações dos objetos
+typedef struct {
+    SDL_Rect rect;
+    int speed;
+    Uint32 lastShotTime;
+    MissileInfo *missiles;
+    int numMissiles;
+} CannonInfo;
+
+typedef struct {
+    SDL_Rect rect;
+    int speed;
+} HelicopterInfo;
+
+// Função pra criar um objeto
+CannonInfo createCannon(int x, int y, int w, int h, int speed) {
+    CannonInfo cannonInfo;
+    cannonInfo.rect.x = x;
+    cannonInfo.rect.y = y;
+    cannonInfo.rect.w = w;
+    cannonInfo.rect.h = h;
+    cannonInfo.speed = speed;
+    cannonInfo.lastShotTime = SDL_GetTicks();
+    cannonInfo.numMissiles = 0;
+    cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * MAX_MISSILES);
+
+    printf("Number of missiles: %d\n", cannonInfo.numMissiles);
+    return cannonInfo;
+}
+
+// Função pra criar um objeto
+HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed) {
+    HelicopterInfo helicopterInfo;
+    helicopterInfo.rect.x = x;
+    helicopterInfo.rect.y = y;
+    helicopterInfo.rect.w = w;
+    helicopterInfo.rect.h = h;
+    helicopterInfo.speed = speed;
+    return helicopterInfo;
+}
+
+// Função concorrente para mover os mísseis
+void* moveMissiles(void* arg) {
+    MissileInfo* missileInfo = (MissileInfo*)arg;
+
+    while (1) {
+        Uint32 currentTime = SDL_GetTicks();
+
+        if (missileInfo->active) {
+            // Atualiza as posições lógicas do míssil se estiver ativo
+            missileInfo->rect.x += (int)(missileInfo->speed * cos(missileInfo->angle));
+            missileInfo->rect.y -= (int)(missileInfo->speed * sin(missileInfo->angle));
+
+            // Desativa o míssil se ele sair da tela
+            if (missileInfo->rect.x < 0 || missileInfo->rect.x > SCREEN_WIDTH || missileInfo->rect.y < 0 || missileInfo->rect.y > SCREEN_HEIGHT) {
+                missileInfo->active = false;
+            }
+        }
+
+        SDL_Delay(10);
+    }
+
+    return NULL;
+}
+
+// Função pra criar um míssil
+void createMissile(CannonInfo* cannon) {
+    if (cannon->numMissiles >= MAX_MISSILES) {
+        return;
+    }
+
+    // Initialize the new missile
+    MissileInfo *missile = &cannon->missiles[cannon->numMissiles];
+    missile->rect.w = MISSILE_WIDTH;
+    missile->rect.h = MISSILE_HEIGHT;
+    missile->rect.x = cannon->rect.x + (CANNON_WIDTH - MISSILE_WIDTH) / 2; 
+    missile->rect.y = cannon->rect.y;
+    missile->speed = MISSILE_SPEED;
+    missile->active = true;
+    missile->angle = ((rand() % 160) * M_PI / 180.0);
+
+    pthread_t newThread;
+    pthread_create(&newThread, NULL, moveMissiles, &cannon->missiles[cannon->numMissiles]);
+    missile->thread = newThread;
+
+    cannon->numMissiles++;
+    printf("Created new missile: %d\nthread: %lu", cannon->numMissiles, missile->thread);
+}
 
 // Função concorrente para mover a posição lógica dos canhões
 void* moveCannon(void* arg) {
-    RectangleInfo* rectInfo = (RectangleInfo*)arg;
+    CannonInfo* cannonInfo = (CannonInfo*)arg;
 
     while (1) {
-
-        // Bloqueia o mutex do canhão pra evitar race condition com o míssil
-        pthread_mutex_lock(&cannonMutex);
         // Atualiza a posição do canhão
-        rectInfo->rect.x += rectInfo->speed;
+        cannonInfo->rect.x += cannonInfo->speed;
 
-        // Se o canhão alcançar o limite da tela, reseta
-        if (rectInfo->rect.x > SCREEN_WIDTH) {
-            rectInfo->rect.x = -CANNON_WIDTH;
-        } else if (rectInfo->rect.x + CANNON_WIDTH < 0) {
-            rectInfo->rect.x = SCREEN_WIDTH;
+        Uint32 currentTime = SDL_GetTicks();
+
+        if (cannonInfo->numMissiles < MAX_MISSILES && (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME)) {
+            createMissile(cannonInfo);
+            cannonInfo->lastShotTime = currentTime;
         }
 
-        // Desbloqueia a mutex depois de usar as informações dos canhões
-        pthread_mutex_unlock(&cannonMutex);
+        // Se o canhão alcançar o limite da tela, reseta
+        if (cannonInfo->rect.x > SCREEN_WIDTH) {
+            cannonInfo->rect.x = -CANNON_WIDTH;
+        } else if (cannonInfo->rect.x + CANNON_WIDTH < 0) {
+            cannonInfo->rect.x = SCREEN_WIDTH;
+        }
 
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
@@ -71,7 +155,7 @@ void* moveCannon(void* arg) {
 
 // Função concorrente para mover o helicóptero que é controlado pelo usuário
 void* moveHelicopter(void* arg) {
-    RectangleInfo* helicopterRect = (RectangleInfo*)arg;
+    CannonInfo* helicopterRect = (CannonInfo*)arg;
 
     while (1) {
         const Uint8* keystates = SDL_GetKeyboardState(NULL);
@@ -97,51 +181,9 @@ void* moveHelicopter(void* arg) {
     return NULL;
 }
 
-// Função concorrente para mover os mísseis
-void* moveMissiles(void* arg) {
-    MissileInfo* missileInfo = (MissileInfo*)arg;
-
-    while (1) {
-        Uint32 currentTime = SDL_GetTicks();
-
-        if (!missileInfo->active && (currentTime - missileInfo->lastShotTime >= COOLDOWN_TIME)) {
-            // Gera um ângulo aleatório para lançar o míssil
-            missileInfo->angle = ((rand() % 160) * M_PI / 180.0); // calcula o angulo em radianos
-
-            // Bloqueia o mutex do canhão pra evitar race condition com o míssil
-            pthread_mutex_lock(&cannonMutex);
-
-            // Míssil parte do meio do topo do canhão
-            missileInfo->rect.x = missileInfo->cannon->rect.x + (CANNON_WIDTH - MISSILE_WIDTH) / 2; 
-            missileInfo->rect.y = missileInfo->cannon->rect.y;
-
-            // Desbloqueia a mutex depois de usar as informações dos canhões
-            pthread_mutex_unlock(&cannonMutex);
-
-            missileInfo->active = true;
-            missileInfo->lastShotTime = currentTime;
-        }
-
-        if (missileInfo->active) {
-            // Atualiza as posições lógicas do míssil se estiver ativo
-            missileInfo->rect.x += (int)(missileInfo->speed * cos(missileInfo->angle));
-            missileInfo->rect.y -= (int)(missileInfo->speed * sin(missileInfo->angle));
-
-            // Desativa o míssil se ele sair da tela
-            if (missileInfo->rect.x < 0 || missileInfo->rect.x > SCREEN_WIDTH || missileInfo->rect.y < 0 || missileInfo->rect.y > SCREEN_HEIGHT) {
-                missileInfo->active = false;
-            }
-        }
-
-        SDL_Delay(10);
-    }
-
-    return NULL;
-}
-
 // Função pra renderizar os objetos
 // Isso não pode ser concorrente porque a tela que o usuário vê é uma zona de exclusão mútua
-void render(SDL_Renderer* renderer, RectangleInfo* cannon1Info, RectangleInfo* cannon2Info, RectangleInfo* helicopterInfo, MissileInfo* missile1Info, MissileInfo* missile2Info) {
+void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
     // Limpa a tela
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
@@ -158,44 +200,44 @@ void render(SDL_Renderer* renderer, RectangleInfo* cannon1Info, RectangleInfo* c
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue color
     SDL_RenderFillRect(renderer, &helicopterInfo->rect);
 
-    // Desenha o míssil 1
-    if (missile1Info->active) {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow color
-        SDL_RenderFillRect(renderer, &missile1Info->rect);
+    int cannon1Inactive = 0;
+    int cannon2Inactive = 0;
+
+    for (int i = 0; i < cannon1Info->numMissiles; i++)
+    {
+        if (cannon1Info->missiles[i].active)
+        {
+            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_RenderFillRect(renderer, &cannon1Info->missiles[i].rect);
+        }
+        
+        else
+        {
+            pthread_cancel(cannon1Info->missiles[i].thread);
+            cannon1Inactive++;
+        }
     }
 
-    // Desenha o míssil 2
-    if (missile2Info->active) {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); // Yellow color
-        SDL_RenderFillRect(renderer, &missile2Info->rect);
+    for (int i = 0; i < cannon2Info->numMissiles; i++)
+    {
+        if (cannon2Info->missiles[i].active)
+        {
+            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_RenderFillRect(renderer, &cannon2Info->missiles[i].rect);
+        }
+       
+        else 
+        {
+            pthread_cancel(cannon2Info->missiles[i].thread);
+            cannon2Inactive++;
+        }
     }
+
+    cannon1Info->numMissiles -= cannon1Inactive;
+    cannon2Info->numMissiles -= cannon2Inactive;
 
     // Atualiza a tela
     SDL_RenderPresent(renderer);
-}
-
-// Função pra criar um objeto
-RectangleInfo createRectangle(int x, int y, int w, int h, int speed) {
-    RectangleInfo rectInfo;
-    rectInfo.rect.x = x;
-    rectInfo.rect.y = y;
-    rectInfo.rect.w = w;
-    rectInfo.rect.h = h;
-    rectInfo.speed = speed;
-    return rectInfo;
-}
-
-// Função pra criar um míssil
-MissileInfo createMissile(RectangleInfo* cannon) {
-    MissileInfo missileInfo;
-    missileInfo.rect.w = MISSILE_WIDTH;
-    missileInfo.rect.h = MISSILE_HEIGHT;
-    missileInfo.speed = MISSILE_SPEED;
-    missileInfo.active = false;
-    missileInfo.lastShotTime = 0;
-    missileInfo.angle = 0.0;
-    missileInfo.cannon = cannon;
-    return missileInfo;
 }
 
 int main(int argc, char* argv[]) {
@@ -221,21 +263,15 @@ int main(int argc, char* argv[]) {
 
     // Inicializa as threads
     pthread_t thread1, thread2, thread3, thread4, thread5;
-    RectangleInfo cannon1Info = createRectangle(0, 350, CANNON_WIDTH, CANNON_HEIGHT, CANNON_SPEED);
-    RectangleInfo cannon2Info = createRectangle(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
-    RectangleInfo helicopterInfo = createRectangle(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED);
+    CannonInfo cannon1Info = createCannon(0, 350, CANNON_WIDTH, CANNON_HEIGHT, CANNON_SPEED);
+    CannonInfo cannon2Info = createCannon(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
+    HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED);
 
     pthread_create(&thread1, NULL, moveCannon, &cannon1Info);
     pthread_create(&thread2, NULL, moveCannon, &cannon2Info);
     pthread_create(&thread3, NULL, moveHelicopter, &helicopterInfo);
 
-    // Inicializa os mísseis
     srand(time(NULL)); // Seed pra gerar números aleatórios
-    MissileInfo missile1Info = createMissile(&cannon1Info);
-    MissileInfo missile2Info = createMissile(&cannon2Info);
-
-    pthread_create(&thread4, NULL, moveMissiles, &missile1Info);
-    pthread_create(&thread5, NULL, moveMissiles, &missile2Info);
 
     // Game loop
     int quit = 0;
@@ -250,15 +286,17 @@ int main(int argc, char* argv[]) {
         }
 
         // Chama a função que renderiza na tela
-        render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo, &missile1Info, &missile2Info);
+        render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
     }
 
     // Destrói as threads e a janela do SDL
     pthread_cancel(thread1);
     pthread_cancel(thread2);
     pthread_cancel(thread3);
-    pthread_cancel(thread4);
-    pthread_cancel(thread5);
+
+    free(cannon1Info.missiles);
+    free(cannon2Info.missiles);
+
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     SDL_Quit();
