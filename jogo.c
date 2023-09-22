@@ -21,9 +21,9 @@ const int MISSILE_SPEED = 5;
 const int COOLDOWN_TIME = 2000;
 const int MAX_MISSILES = 10;
 
-// Mutex para controlar o acesso à renderização da tela
-pthread_mutex_t renderMutex = PTHREAD_MUTEX_INITIALIZER;
-// Mutex para controlar as posições dos canhões
+// Mutex para controlar o acesso às posições dos mísseis
+pthread_mutex_t missileMutex = PTHREAD_MUTEX_INITIALIZER;
+// Mutex para controlar o acesso às posições dos canhões
 pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Guarda as informações dos mísseis
@@ -47,13 +47,15 @@ typedef struct {
 typedef struct {
     SDL_Rect rect;
     int speed;
-    SDL_Rect** collision_rects;
+    SDL_Rect** fixed_collision_rects;
+    MissileInfo** missile_collision_rects;
+    int num_missile_collision_rects;
 } HelicopterInfo;
 
 typedef struct {
-    SDL_Rect helicopterRect;
-    SDL_Rect *collision_rects;
-} CollisionCheckerParams;
+    HelicopterInfo* helicopterInfo;
+    CannonInfo* cannonInfo;
+} MoveCannonThreadParams;
 
 // Função pra criar um objeto
 CannonInfo createCannon(int x, int y, int w, int h, int speed) {
@@ -67,7 +69,6 @@ CannonInfo createCannon(int x, int y, int w, int h, int speed) {
     cannonInfo.numMissiles = 0;
     cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * MAX_MISSILES);
 
-    printf("Number of missiles: %d\n", cannonInfo.numMissiles);
     return cannonInfo;
 }
 
@@ -79,8 +80,16 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect*
     helicopterInfo.rect.w = w;
     helicopterInfo.rect.h = h;
     helicopterInfo.speed = speed;
-    helicopterInfo.collision_rects = collisionRectArray;
+    helicopterInfo.fixed_collision_rects = collisionRectArray;
+    helicopterInfo.missile_collision_rects = (MissileInfo **)malloc(sizeof(MissileInfo *) * 20);
+    helicopterInfo.num_missile_collision_rects = 0;
     return helicopterInfo;
+}
+
+// Função pra criar um objeto
+void addHelicopterCollisionMissile(HelicopterInfo* helicopter, MissileInfo* missile) {
+    helicopter->missile_collision_rects[helicopter->num_missile_collision_rects] = missile;
+    helicopter->num_missile_collision_rects++;
 }
 
 // Função concorrente para mover os mísseis
@@ -89,6 +98,8 @@ void* moveMissiles(void* arg) {
 
     while (1) {
         Uint32 currentTime = SDL_GetTicks();
+
+        pthread_mutex_lock(&missileMutex);
 
         if (missileInfo->active) {
             // Atualiza as posições lógicas do míssil se estiver ativo
@@ -101,6 +112,8 @@ void* moveMissiles(void* arg) {
             }
         }
 
+        pthread_mutex_unlock(&missileMutex);
+
         SDL_Delay(10);
     }
 
@@ -108,7 +121,7 @@ void* moveMissiles(void* arg) {
 }
 
 // Função pra criar um míssil
-void createMissile(CannonInfo* cannon) {
+void createMissile(CannonInfo* cannon, HelicopterInfo* helicopter) {
     if (cannon->numMissiles >= MAX_MISSILES) {
         return;
     }
@@ -127,13 +140,17 @@ void createMissile(CannonInfo* cannon) {
     pthread_create(&newThread, NULL, moveMissiles, &cannon->missiles[cannon->numMissiles]);
     missile->thread = newThread;
 
+    addHelicopterCollisionMissile(helicopter, &cannon->missiles[cannon->numMissiles]);
+
     cannon->numMissiles++;
     printf("Created new missile: %d\nthread: %lu", cannon->numMissiles, missile->thread);
 }
 
 // Função concorrente para mover a posição lógica dos canhões
 void* moveCannon(void* arg) {
-    CannonInfo* cannonInfo = (CannonInfo*)arg;
+    MoveCannonThreadParams* params = (MoveCannonThreadParams*)arg;
+    CannonInfo* cannonInfo = params->cannonInfo;
+    HelicopterInfo* helicopterInfo = params->helicopterInfo;
 
     while (1) {
         // Atualiza a posição do canhão
@@ -142,16 +159,18 @@ void* moveCannon(void* arg) {
         Uint32 currentTime = SDL_GetTicks();
 
         if (cannonInfo->numMissiles < MAX_MISSILES && (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME)) {
-            createMissile(cannonInfo);
+            createMissile(cannonInfo, helicopterInfo);
             cannonInfo->lastShotTime = currentTime;
         }
 
+        pthread_mutex_lock(&cannonMutex);
         // Se o canhão alcançar o limite da tela, reseta
         if (cannonInfo->rect.x > SCREEN_WIDTH) {
             cannonInfo->rect.x = -CANNON_WIDTH;
         } else if (cannonInfo->rect.x + CANNON_WIDTH < 0) {
             cannonInfo->rect.x = SCREEN_WIDTH;
         }
+        pthread_mutex_unlock(&cannonMutex);
 
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
@@ -160,8 +179,23 @@ void* moveCannon(void* arg) {
     return NULL;
 }
 
+void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], int missiles_length) {
+    // Bloqueia o mutex porque atualização da tela tem exclusão mútua
+    pthread_mutex_lock(&missileMutex);
+    for (int i = 0; i < missiles_length; i++)
+    {
+        if (&missiles[i]->active) {
+            SDL_Rect *collisionRect = &missiles[i]->rect;
+            if (SDL_HasIntersection(&helicopterRect, collisionRect)) {   
+                printf("Collision detected with missile %d\n", i);
+            }
+        }
+    }
+    pthread_mutex_unlock(&missileMutex);
+}
+
 void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int rects_length) {
-    printf("length: %d\n", rects_length);
+    pthread_mutex_lock(&cannonMutex);
     for (int i = 0; i < rects_length; i++)
     {
         SDL_Rect *collisionRect = rects[i];
@@ -169,34 +203,41 @@ void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int r
                 printf("Collision detected with rect %d\n", i);
             }
     }
+    pthread_mutex_unlock(&cannonMutex);
 }
 
 
 // Função concorrente para mover o helicóptero que é controlado pelo usuário
 void* moveHelicopter(void* arg) {
-    HelicopterInfo* helicopterRect = (HelicopterInfo*)arg;
+    HelicopterInfo* helicopterInfo = (HelicopterInfo*)arg;
 
     while (1) {
         const Uint8* keystates = SDL_GetKeyboardState(NULL);
 
         // Checa o estado atual do teclado pra ver se está pressionado
         if (keystates[SDL_SCANCODE_LEFT]) {
-            helicopterRect->rect.x -= helicopterRect->speed;
+            helicopterInfo->rect.x -= helicopterInfo->speed;
         }
         if (keystates[SDL_SCANCODE_RIGHT]) {
-            helicopterRect->rect.x += helicopterRect->speed;
+            helicopterInfo->rect.x += helicopterInfo->speed;
         }
         if (keystates[SDL_SCANCODE_UP]) {
-            helicopterRect->rect.y -= helicopterRect->speed;
+            helicopterInfo->rect.y -= helicopterInfo->speed;
         }
         if (keystates[SDL_SCANCODE_DOWN]) {
-            helicopterRect->rect.y += helicopterRect->speed;
+            helicopterInfo->rect.y += helicopterInfo->speed;
         }
 
         checkHelicopterCollisions(
-            helicopterRect->rect,
-            helicopterRect->collision_rects,
+            helicopterInfo->rect,
+            helicopterInfo->fixed_collision_rects,
             2
+        );
+
+        checkMissileCollisions(
+            helicopterInfo->rect,
+            helicopterInfo->missile_collision_rects,
+            helicopterInfo->num_missile_collision_rects
         );
 
         // Espera 10ms pra controlar a velocidade
@@ -237,6 +278,7 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
         else {
             pthread_cancel(cannon1Info->missiles[i].thread);
             cannon1Inactive++;
+            helicopterInfo->num_missile_collision_rects--;
         }
     }
 
@@ -249,6 +291,7 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
         else {
             pthread_cancel(cannon2Info->missiles[i].thread);
             cannon2Inactive++;
+            helicopterInfo->num_missile_collision_rects--;
         }
     }
 
@@ -286,14 +329,24 @@ int main(int argc, char* argv[]) {
     CannonInfo cannon2Info = createCannon(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
 
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
-
+    
     rectArray[0] = &cannon1Info.rect;
     rectArray[1] = &cannon2Info.rect;
-
     HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
 
-    pthread_create(&thread_cannon1, NULL, moveCannon, &cannon1Info);
-    pthread_create(&thread_cannon2, NULL, moveCannon, &cannon2Info);
+    // addHelicopterCollisionMissile(&helicopterInfo, &cannon1Info.rect);
+    // addHelicopterCollisionMissile(&helicopterInfo, &cannon2Info.rect);
+
+    MoveCannonThreadParams paramsCannon1;
+    paramsCannon1.helicopterInfo = &helicopterInfo;
+    paramsCannon1.cannonInfo = &cannon1Info;
+
+    MoveCannonThreadParams paramsCannon2;
+    paramsCannon2.helicopterInfo = &helicopterInfo;
+    paramsCannon2.cannonInfo = &cannon2Info;
+
+    pthread_create(&thread_cannon1, NULL, moveCannon, &paramsCannon1);
+    pthread_create(&thread_cannon2, NULL, moveCannon, &paramsCannon2);
     pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);
 
     srand(time(NULL)); // Seed pra gerar números aleatórios
@@ -321,7 +374,8 @@ int main(int argc, char* argv[]) {
 
     free(cannon1Info.missiles);
     free(cannon2Info.missiles);
-    free(helicopterInfo.collision_rects);
+    free(helicopterInfo.fixed_collision_rects);
+    free(helicopterInfo.missile_collision_rects);
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
