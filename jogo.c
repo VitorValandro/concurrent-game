@@ -47,7 +47,13 @@ typedef struct {
 typedef struct {
     SDL_Rect rect;
     int speed;
+    SDL_Rect** collision_rects;
 } HelicopterInfo;
+
+typedef struct {
+    SDL_Rect helicopterRect;
+    SDL_Rect *collision_rects;
+} CollisionCheckerParams;
 
 // Função pra criar um objeto
 CannonInfo createCannon(int x, int y, int w, int h, int speed) {
@@ -66,13 +72,14 @@ CannonInfo createCannon(int x, int y, int w, int h, int speed) {
 }
 
 // Função pra criar um objeto
-HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed) {
+HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect** collisionRectArray) {
     HelicopterInfo helicopterInfo;
     helicopterInfo.rect.x = x;
     helicopterInfo.rect.y = y;
     helicopterInfo.rect.w = w;
     helicopterInfo.rect.h = h;
     helicopterInfo.speed = speed;
+    helicopterInfo.collision_rects = collisionRectArray;
     return helicopterInfo;
 }
 
@@ -153,9 +160,21 @@ void* moveCannon(void* arg) {
     return NULL;
 }
 
+void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int rects_length) {
+    printf("length: %d\n", rects_length);
+    for (int i = 0; i < rects_length; i++)
+    {
+        SDL_Rect *collisionRect = rects[i];
+            if (SDL_HasIntersection(&helicopterRect, collisionRect)) {
+                printf("Collision detected with rect %d\n", i);
+            }
+    }
+}
+
+
 // Função concorrente para mover o helicóptero que é controlado pelo usuário
 void* moveHelicopter(void* arg) {
-    CannonInfo* helicopterRect = (CannonInfo*)arg;
+    HelicopterInfo* helicopterRect = (HelicopterInfo*)arg;
 
     while (1) {
         const Uint8* keystates = SDL_GetKeyboardState(NULL);
@@ -173,6 +192,12 @@ void* moveHelicopter(void* arg) {
         if (keystates[SDL_SCANCODE_DOWN]) {
             helicopterRect->rect.y += helicopterRect->speed;
         }
+
+        checkHelicopterCollisions(
+            helicopterRect->rect,
+            helicopterRect->collision_rects,
+            2
+        );
 
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
@@ -203,31 +228,25 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
     int cannon1Inactive = 0;
     int cannon2Inactive = 0;
 
-    for (int i = 0; i < cannon1Info->numMissiles; i++)
-    {
-        if (cannon1Info->missiles[i].active)
-        {
+    for (int i = 0; i < cannon1Info->numMissiles; i++) {
+        if (cannon1Info->missiles[i].active) {
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon1Info->missiles[i].rect);
         }
         
-        else
-        {
+        else {
             pthread_cancel(cannon1Info->missiles[i].thread);
             cannon1Inactive++;
         }
     }
 
-    for (int i = 0; i < cannon2Info->numMissiles; i++)
-    {
-        if (cannon2Info->missiles[i].active)
-        {
+    for (int i = 0; i < cannon2Info->numMissiles; i++) {
+        if (cannon2Info->missiles[i].active){
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon2Info->missiles[i].rect);
         }
        
-        else 
-        {
+        else {
             pthread_cancel(cannon2Info->missiles[i].thread);
             cannon2Inactive++;
         }
@@ -262,14 +281,20 @@ int main(int argc, char* argv[]) {
     }
 
     // Inicializa as threads
-    pthread_t thread1, thread2, thread3, thread4, thread5;
+    pthread_t thread_cannon1, thread_cannon2, thread_helicopter;
     CannonInfo cannon1Info = createCannon(0, 350, CANNON_WIDTH, CANNON_HEIGHT, CANNON_SPEED);
     CannonInfo cannon2Info = createCannon(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
-    HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED);
 
-    pthread_create(&thread1, NULL, moveCannon, &cannon1Info);
-    pthread_create(&thread2, NULL, moveCannon, &cannon2Info);
-    pthread_create(&thread3, NULL, moveHelicopter, &helicopterInfo);
+    SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
+
+    rectArray[0] = &cannon1Info.rect;
+    rectArray[1] = &cannon2Info.rect;
+
+    HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
+
+    pthread_create(&thread_cannon1, NULL, moveCannon, &cannon1Info);
+    pthread_create(&thread_cannon2, NULL, moveCannon, &cannon2Info);
+    pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);
 
     srand(time(NULL)); // Seed pra gerar números aleatórios
 
@@ -290,12 +315,13 @@ int main(int argc, char* argv[]) {
     }
 
     // Destrói as threads e a janela do SDL
-    pthread_cancel(thread1);
-    pthread_cancel(thread2);
-    pthread_cancel(thread3);
+    pthread_cancel(thread_cannon1);
+    pthread_cancel(thread_cannon2);
+    pthread_cancel(thread_helicopter);
 
     free(cannon1Info.missiles);
     free(cannon2Info.missiles);
+    free(helicopterInfo.collision_rects);
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
