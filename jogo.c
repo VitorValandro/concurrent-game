@@ -29,6 +29,8 @@ const int AMMUNITION = MAX_MISSILES;
 // Mutex para controlar o acesso às posições dos mísseis
 pthread_mutex_t missileMutex = PTHREAD_MUTEX_INITIALIZER;
 
+pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
+
 // Guarda as informações dos mísseis
 typedef struct {
     SDL_Rect rect;
@@ -188,6 +190,7 @@ void* moveCannon(void* arg) {
     while (1) {
         if (cannonInfo->ammunition == 0)
         {
+            pthread_mutex_lock(&cannonMutex);
             if (cannonInfo->rect.x < LEFT_BUILDING_WIDTH - CANNON_WIDTH * 1.5)
             {
                 sem_post(&cannonInfo->ammunition_semaphore_empty);
@@ -196,6 +199,7 @@ void* moveCannon(void* arg) {
             else {
                 cannonInfo->rect.x -= abs(cannonInfo->speed);
             }
+            pthread_mutex_unlock(&cannonMutex);
         }
 
         else {
@@ -394,7 +398,7 @@ int main(int argc, char* argv[]) {
     BridgeInfo bridgeInfo = createBridge(LEFT_BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
 
     CannonInfo cannon1Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
-    CannonInfo cannon2Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 1.2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon2Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
 
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
     
