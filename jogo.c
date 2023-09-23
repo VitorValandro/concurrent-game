@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+#include <semaphore.h>
 
 // Constantes
 const int SCREEN_WIDTH = 800;
@@ -15,11 +16,12 @@ const int HELICOPTER_WIDTH = 120;
 const int HELICOPTER_HEIGHT = 50;
 const int MISSILE_WIDTH = 5;
 const int MISSILE_HEIGHT = 15;
-const int CANNON_SPEED = 3;
+const int CANNON_SPEED = 2;
 const int HELICOPTER_SPEED = 3;
 const int MISSILE_SPEED = 5;
 const int COOLDOWN_TIME = 2000;
-const int MAX_MISSILES = 10;
+const int MAX_MISSILES = 5;
+const int AMMUNITION = MAX_MISSILES;
 
 // Mutex para controlar o acesso às posições dos mísseis
 pthread_mutex_t missileMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -41,8 +43,12 @@ typedef struct {
     int speed;
     Uint32 lastShotTime;
     MissileInfo *missiles;
-    int numMissiles;
-} CannonInfo;
+    int numActiveMissiles;
+    int ammunition;
+
+    sem_t ammunition_semaphore_empty;
+    sem_t ammunition_semaphore;
+    } CannonInfo;
 
 typedef struct {
     SDL_Rect rect;
@@ -66,8 +72,16 @@ CannonInfo createCannon(int x, int y, int w, int h, int speed) {
     cannonInfo.rect.h = h;
     cannonInfo.speed = speed;
     cannonInfo.lastShotTime = SDL_GetTicks();
-    cannonInfo.numMissiles = 0;
+    cannonInfo.numActiveMissiles = 0;
     cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * MAX_MISSILES);
+    cannonInfo.ammunition = 0;
+
+    sem_t sem_empty, ammo_sem;
+    sem_init(&sem_empty, 0, 1);
+    sem_init(&ammo_sem, 0, 0);
+
+    cannonInfo.ammunition_semaphore_empty = sem_empty;
+    cannonInfo.ammunition_semaphore = ammo_sem;
 
     return cannonInfo;
 }
@@ -86,7 +100,6 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect*
     return helicopterInfo;
 }
 
-// Função pra criar um objeto
 void addHelicopterCollisionMissile(HelicopterInfo* helicopter, MissileInfo* missile) {
     helicopter->missile_collision_rects[helicopter->num_missile_collision_rects] = missile;
     helicopter->num_missile_collision_rects++;
@@ -122,29 +135,31 @@ void* moveMissiles(void* arg) {
 
 // Função pra criar um míssil
 void createMissile(CannonInfo* cannon, HelicopterInfo* helicopter) {
-    if (cannon->numMissiles >= MAX_MISSILES) {
+    if (cannon->ammunition == 0) {
         return;
     }
 
     // Initialize the new missile
-    MissileInfo *missile = &cannon->missiles[cannon->numMissiles];
+    MissileInfo *missile = &cannon->missiles[cannon->numActiveMissiles];
     missile->rect.w = MISSILE_WIDTH;
     missile->rect.h = MISSILE_HEIGHT;
     missile->rect.x = cannon->rect.x + (CANNON_WIDTH - MISSILE_WIDTH) / 2; 
     missile->rect.y = cannon->rect.y;
     missile->speed = MISSILE_SPEED;
     missile->active = true;
-    missile->angle = ((rand() % 160) * M_PI / 180.0);
+    missile->angle = ((rand() % 120) * M_PI / 180.0);
 
     pthread_t newThread;
-    pthread_create(&newThread, NULL, moveMissiles, &cannon->missiles[cannon->numMissiles]);
+    pthread_create(&newThread, NULL, moveMissiles, &cannon->missiles[cannon->numActiveMissiles]);
     missile->thread = newThread;
 
-    addHelicopterCollisionMissile(helicopter, &cannon->missiles[cannon->numMissiles]);
+    addHelicopterCollisionMissile(helicopter, &cannon->missiles[cannon->numActiveMissiles]);
 
-    cannon->numMissiles++;
-    printf("Created new missile: %d\nthread: %lu", cannon->numMissiles, missile->thread);
+    cannon->numActiveMissiles++;
+    cannon->ammunition--;
+    printf("Created new missile: %d\n", cannon->ammunition);
 }
+
 
 // Função concorrente para mover a posição lógica dos canhões
 void* moveCannon(void* arg) {
@@ -158,7 +173,9 @@ void* moveCannon(void* arg) {
 
         Uint32 currentTime = SDL_GetTicks();
 
-        if (cannonInfo->numMissiles < MAX_MISSILES && (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME)) {
+        if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME) {
+            if (cannonInfo->ammunition == 0) sem_post(&cannonInfo->ammunition_semaphore_empty);
+            sem_wait(&cannonInfo->ammunition_semaphore);
             createMissile(cannonInfo, helicopterInfo);
             cannonInfo->lastShotTime = currentTime;
         }
@@ -177,6 +194,24 @@ void* moveCannon(void* arg) {
     }
 
     return NULL;
+}
+
+void* reloadCannonAmmunition(void* arg) {
+     CannonInfo* cannonInfo = (CannonInfo*)arg;
+
+    while(1) {
+        sem_wait(&cannonInfo->ammunition_semaphore_empty);
+
+        //cannonInfo->ammunition = AMMUNITION;
+        for (int i = 0; i < AMMUNITION; i++)
+        {
+            printf("Recarregando munição do canhão: %d\n", i);
+            cannonInfo->ammunition++;
+
+            sem_post(&cannonInfo->ammunition_semaphore);
+            SDL_Delay(1000);
+        }
+    }
 }
 
 void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], int missiles_length) {
@@ -269,7 +304,7 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
     int cannon1Inactive = 0;
     int cannon2Inactive = 0;
 
-    for (int i = 0; i < cannon1Info->numMissiles; i++) {
+    for (int i = 0; i < cannon1Info->numActiveMissiles; i++) {
         if (cannon1Info->missiles[i].active) {
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon1Info->missiles[i].rect);
@@ -282,7 +317,7 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
         }
     }
 
-    for (int i = 0; i < cannon2Info->numMissiles; i++) {
+    for (int i = 0; i < cannon2Info->numActiveMissiles; i++) {
         if (cannon2Info->missiles[i].active){
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon2Info->missiles[i].rect);
@@ -295,8 +330,8 @@ void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2
         }
     }
 
-    cannon1Info->numMissiles -= cannon1Inactive;
-    cannon2Info->numMissiles -= cannon2Inactive;
+    cannon1Info->numActiveMissiles -= cannon1Inactive;
+    cannon2Info->numActiveMissiles -= cannon2Inactive;
 
     // Atualiza a tela
     SDL_RenderPresent(renderer);
@@ -323,8 +358,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Inicializa as threads
-    pthread_t thread_cannon1, thread_cannon2, thread_helicopter;
     CannonInfo cannon1Info = createCannon(0, 350, CANNON_WIDTH, CANNON_HEIGHT, CANNON_SPEED);
     CannonInfo cannon2Info = createCannon(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
 
@@ -334,9 +367,6 @@ int main(int argc, char* argv[]) {
     rectArray[1] = &cannon2Info.rect;
     HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
 
-    // addHelicopterCollisionMissile(&helicopterInfo, &cannon1Info.rect);
-    // addHelicopterCollisionMissile(&helicopterInfo, &cannon2Info.rect);
-
     MoveCannonThreadParams paramsCannon1;
     paramsCannon1.helicopterInfo = &helicopterInfo;
     paramsCannon1.cannonInfo = &cannon1Info;
@@ -345,9 +375,13 @@ int main(int argc, char* argv[]) {
     paramsCannon2.helicopterInfo = &helicopterInfo;
     paramsCannon2.cannonInfo = &cannon2Info;
 
+    // Inicializa as threads
+    pthread_t thread_cannon1, thread_cannon2, thread_helicopter, thread_reload_cannon1, thread_reload_cannon2;
     pthread_create(&thread_cannon1, NULL, moveCannon, &paramsCannon1);
     pthread_create(&thread_cannon2, NULL, moveCannon, &paramsCannon2);
     pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);
+    pthread_create(&thread_reload_cannon1, NULL, reloadCannonAmmunition, &cannon1Info);
+    pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &cannon2Info);
 
     srand(time(NULL)); // Seed pra gerar números aleatórios
 
@@ -371,6 +405,13 @@ int main(int argc, char* argv[]) {
     pthread_cancel(thread_cannon1);
     pthread_cancel(thread_cannon2);
     pthread_cancel(thread_helicopter);
+    pthread_cancel(thread_reload_cannon1);
+    pthread_cancel(thread_reload_cannon2);
+
+    sem_destroy(&cannon1Info.ammunition_semaphore_empty);
+    sem_destroy(&cannon2Info.ammunition_semaphore_empty);
+    sem_destroy(&cannon1Info.ammunition_semaphore);
+    sem_destroy(&cannon2Info.ammunition_semaphore);
 
     free(cannon1Info.missiles);
     free(cannon2Info.missiles);
