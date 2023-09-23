@@ -8,12 +8,15 @@
 #include <semaphore.h>
 
 // Constantes
-const int SCREEN_WIDTH = 800;
+const int SCREEN_WIDTH = 900;
 const int SCREEN_HEIGHT = 600;
-const int CANNON_WIDTH = 100;
-const int CANNON_HEIGHT = 50;
-const int HELICOPTER_WIDTH = 120;
-const int HELICOPTER_HEIGHT = 50;
+const int LEFT_BUILDING_WIDTH = 150;
+const int BRIDGE_WIDTH = 100;
+const int BRIDGE_HEIGHT = 100;
+const int CANNON_WIDTH = 50;
+const int CANNON_HEIGHT = 25;
+const int HELICOPTER_WIDTH = 90;
+const int HELICOPTER_HEIGHT = 30;
 const int MISSILE_WIDTH = 5;
 const int MISSILE_HEIGHT = 15;
 const int CANNON_SPEED = 2;
@@ -25,8 +28,6 @@ const int AMMUNITION = MAX_MISSILES;
 
 // Mutex para controlar o acesso às posições dos mísseis
 pthread_mutex_t missileMutex = PTHREAD_MUTEX_INITIALIZER;
-// Mutex para controlar o acesso às posições dos canhões
-pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Guarda as informações dos mísseis
 typedef struct {
@@ -48,7 +49,8 @@ typedef struct {
 
     sem_t ammunition_semaphore_empty;
     sem_t ammunition_semaphore;
-    } CannonInfo;
+    pthread_mutex_t reloadingLock;
+} CannonInfo;
 
 typedef struct {
     SDL_Rect rect;
@@ -63,25 +65,42 @@ typedef struct {
     CannonInfo* cannonInfo;
 } MoveCannonThreadParams;
 
+typedef struct {
+    SDL_Rect rect;
+} BridgeInfo;
+
 // Função pra criar um objeto
-CannonInfo createCannon(int x, int y, int w, int h, int speed) {
+BridgeInfo createBridge(int x, int y, int w, int h) {
+    BridgeInfo bridgeInfo;
+    bridgeInfo.rect.x = x;
+    bridgeInfo.rect.y = y;
+    bridgeInfo.rect.w = w;
+    bridgeInfo.rect.h = h;
+    return bridgeInfo;
+}
+
+// Função pra criar um objeto
+CannonInfo createCannon(int x, int y, int w, int h) {
     CannonInfo cannonInfo;
     cannonInfo.rect.x = x;
     cannonInfo.rect.y = y;
     cannonInfo.rect.w = w;
     cannonInfo.rect.h = h;
-    cannonInfo.speed = speed;
+    cannonInfo.speed = CANNON_SPEED;
     cannonInfo.lastShotTime = SDL_GetTicks();
     cannonInfo.numActiveMissiles = 0;
     cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * MAX_MISSILES);
-    cannonInfo.ammunition = 0;
+    cannonInfo.ammunition = AMMUNITION;
 
     sem_t sem_empty, ammo_sem;
-    sem_init(&sem_empty, 0, 1);
-    sem_init(&ammo_sem, 0, 0);
+    sem_init(&sem_empty, 0, 0);
+    sem_init(&ammo_sem, 0, 1);
 
     cannonInfo.ammunition_semaphore_empty = sem_empty;
     cannonInfo.ammunition_semaphore = ammo_sem;
+
+    pthread_mutex_t lock;
+    cannonInfo.reloadingLock = lock;
 
     return cannonInfo;
 }
@@ -160,7 +179,6 @@ void createMissile(CannonInfo* cannon, HelicopterInfo* helicopter) {
     printf("Created new missile: %d\n", cannon->ammunition);
 }
 
-
 // Função concorrente para mover a posição lógica dos canhões
 void* moveCannon(void* arg) {
     MoveCannonThreadParams* params = (MoveCannonThreadParams*)arg;
@@ -168,26 +186,37 @@ void* moveCannon(void* arg) {
     HelicopterInfo* helicopterInfo = params->helicopterInfo;
 
     while (1) {
-        // Atualiza a posição do canhão
-        cannonInfo->rect.x += cannonInfo->speed;
-
-        Uint32 currentTime = SDL_GetTicks();
-
-        if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME) {
-            if (cannonInfo->ammunition == 0) sem_post(&cannonInfo->ammunition_semaphore_empty);
-            sem_wait(&cannonInfo->ammunition_semaphore);
-            createMissile(cannonInfo, helicopterInfo);
-            cannonInfo->lastShotTime = currentTime;
+        if (cannonInfo->ammunition == 0)
+        {
+            if (cannonInfo->rect.x < LEFT_BUILDING_WIDTH - CANNON_WIDTH * 1.5)
+            {
+                sem_post(&cannonInfo->ammunition_semaphore_empty);
+                sem_wait(&cannonInfo->ammunition_semaphore);
+            }
+            else {
+                cannonInfo->rect.x -= abs(cannonInfo->speed);
+            }
         }
 
-        pthread_mutex_lock(&cannonMutex);
-        // Se o canhão alcançar o limite da tela, reseta
-        if (cannonInfo->rect.x > SCREEN_WIDTH) {
-            cannonInfo->rect.x = -CANNON_WIDTH;
-        } else if (cannonInfo->rect.x + CANNON_WIDTH < 0) {
-            cannonInfo->rect.x = SCREEN_WIDTH;
-        }
-        pthread_mutex_unlock(&cannonMutex);
+        else {
+            Uint32 currentTime = SDL_GetTicks();
+            if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME) {
+                createMissile(cannonInfo, helicopterInfo);
+                cannonInfo->lastShotTime = currentTime;
+            }
+
+            // Atualiza a posição do canhão
+            cannonInfo->rect.x += cannonInfo->speed;
+
+            // Se o canhão alcançar o limite da tela, volta
+            if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH) {
+                cannonInfo->speed = -CANNON_SPEED;
+            }
+            else if (cannonInfo->rect.x < LEFT_BUILDING_WIDTH + BRIDGE_WIDTH)
+            {
+                cannonInfo->speed = CANNON_SPEED;
+            }
+        }  
 
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
@@ -202,15 +231,17 @@ void* reloadCannonAmmunition(void* arg) {
     while(1) {
         sem_wait(&cannonInfo->ammunition_semaphore_empty);
 
-        //cannonInfo->ammunition = AMMUNITION;
-        for (int i = 0; i < AMMUNITION; i++)
-        {
-            printf("Recarregando munição do canhão: %d\n", i);
-            cannonInfo->ammunition++;
+        if (cannonInfo->ammunition == 0) {
+            for (int i = 0; i < AMMUNITION; i++)
+            {
+                printf("Recarregando munição do canhão: %d\n", i);
+                SDL_Delay(1000);
+            }
 
-            sem_post(&cannonInfo->ammunition_semaphore);
-            SDL_Delay(1000);
+            cannonInfo->ammunition = AMMUNITION;
         }
+
+        sem_post(&cannonInfo->ammunition_semaphore);
     }
 }
 
@@ -230,7 +261,6 @@ void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], in
 }
 
 void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int rects_length) {
-    pthread_mutex_lock(&cannonMutex);
     for (int i = 0; i < rects_length; i++)
     {
         SDL_Rect *collisionRect = rects[i];
@@ -238,7 +268,6 @@ void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int r
                 printf("Collision detected with rect %d\n", i);
             }
     }
-    pthread_mutex_unlock(&cannonMutex);
 }
 
 
@@ -284,10 +313,14 @@ void* moveHelicopter(void* arg) {
 
 // Função pra renderizar os objetos
 // Isso não pode ser concorrente porque a tela que o usuário vê é uma zona de exclusão mútua
-void render(SDL_Renderer* renderer, CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
+void render(SDL_Renderer* renderer, BridgeInfo* bridgeInfo, CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
     // Limpa a tela
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
+
+    // Desenha o canhão 1 na tela
+    SDL_SetRenderDrawColor(renderer, 0, 165, 42, 42); // Green color
+    SDL_RenderFillRect(renderer, &bridgeInfo->rect);
 
     // Desenha o canhão 1 na tela
     SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green color
@@ -358,8 +391,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    CannonInfo cannon1Info = createCannon(0, 350, CANNON_WIDTH, CANNON_HEIGHT, CANNON_SPEED);
-    CannonInfo cannon2Info = createCannon(600, 350, CANNON_WIDTH, CANNON_HEIGHT, -CANNON_SPEED);
+    BridgeInfo bridgeInfo = createBridge(LEFT_BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
+
+    CannonInfo cannon1Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon2Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 1.2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
 
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
     
@@ -398,7 +433,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Chama a função que renderiza na tela
-        render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
+        render(renderer, &bridgeInfo, &cannon1Info, &cannon2Info, &helicopterInfo);
     }
 
     // Destrói as threads e a janela do SDL
