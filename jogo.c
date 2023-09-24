@@ -10,9 +10,11 @@
 // Constantes
 const int SCREEN_WIDTH = 900;
 const int SCREEN_HEIGHT = 600;
-const int LEFT_BUILDING_WIDTH = 150;
+const int GROUND_HEIGHT = 100;
+const int BUILDING_WIDTH = 150;
+const int BUILDING_HEIGHT = 300;
 const int BRIDGE_WIDTH = 100;
-const int BRIDGE_HEIGHT = 100;
+const int BRIDGE_HEIGHT = GROUND_HEIGHT;
 const int CANNON_WIDTH = 50;
 const int CANNON_HEIGHT = 25;
 const int HELICOPTER_WIDTH = 90;
@@ -66,16 +68,21 @@ typedef struct {
 
 typedef struct {
     SDL_Rect rect;
-} BridgeInfo;
+} ScenarioElementInfo;
+
+ScenarioElementInfo groundInfo;
+ScenarioElementInfo bridgeInfo;
+ScenarioElementInfo leftBuilding;
+ScenarioElementInfo rightBuilding;
 
 // Função pra criar um objeto
-BridgeInfo createBridge(int x, int y, int w, int h) {
-    BridgeInfo bridgeInfo;
-    bridgeInfo.rect.x = x;
-    bridgeInfo.rect.y = y;
-    bridgeInfo.rect.w = w;
-    bridgeInfo.rect.h = h;
-    return bridgeInfo;
+ScenarioElementInfo createScenarioElement(int x, int y, int w, int h) {
+    ScenarioElementInfo rectInfo;
+    rectInfo.rect.x = x;
+    rectInfo.rect.y = y;
+    rectInfo.rect.w = w;
+    rectInfo.rect.h = h;
+    return rectInfo;
 }
 
 // Função pra criar um objeto
@@ -183,7 +190,7 @@ void* moveCannon(void* arg) {
         if (cannonInfo->ammunition == 0)
         {
             pthread_mutex_lock(&cannonMutex);
-            if (cannonInfo->rect.x < LEFT_BUILDING_WIDTH - CANNON_WIDTH * 1.5)
+            if (cannonInfo->rect.x < BUILDING_WIDTH - CANNON_WIDTH * 1.5)
             {
                 sem_post(&cannonInfo->ammunition_semaphore_empty);
                 sem_wait(&cannonInfo->ammunition_semaphore);
@@ -208,7 +215,7 @@ void* moveCannon(void* arg) {
             if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH) {
                 cannonInfo->speed = -CANNON_SPEED;
             }
-            else if (cannonInfo->rect.x < LEFT_BUILDING_WIDTH + BRIDGE_WIDTH)
+            else if (cannonInfo->rect.x < BUILDING_WIDTH + BRIDGE_WIDTH)
             {
                 cannonInfo->speed = CANNON_SPEED;
             }
@@ -311,25 +318,37 @@ void* moveHelicopter(void* arg) {
 
 // Função pra renderizar os objetos
 // Isso não pode ser concorrente porque a tela que o usuário vê é uma zona de exclusão mútua
-void render(SDL_Renderer* renderer, BridgeInfo* bridgeInfo, CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
+void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
     // Limpa a tela
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
 
-    // Desenha o canhão 1 na tela
-    SDL_SetRenderDrawColor(renderer, 0, 165, 42, 42); // Green color
-    SDL_RenderFillRect(renderer, &bridgeInfo->rect);
+    // Desenha a plataforma da esquerda na tela
+    SDL_SetRenderDrawColor(renderer, 223, 154, 87, 0); // Green color
+    SDL_RenderFillRect(renderer, &leftBuilding.rect);
+
+    // Desenha a plataforma da direita na tela
+    SDL_SetRenderDrawColor(renderer, 223, 154, 87, 0);
+    SDL_RenderFillRect(renderer, &rightBuilding.rect);
+
+    // Desenha o chão na tela
+    SDL_SetRenderDrawColor(renderer, 220, 204, 187, 0);
+    SDL_RenderFillRect(renderer, &groundInfo.rect);
+
+    // Desenha a ponte na tela
+    SDL_SetRenderDrawColor(renderer, 94, 91, 82, 0);
+    SDL_RenderFillRect(renderer, &bridgeInfo.rect);
 
     // Desenha o canhão 1 na tela
-    SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255); // Green color
+    SDL_SetRenderDrawColor(renderer, 252, 215, 87, 0); // Green color
     SDL_RenderFillRect(renderer, &cannon1Info->rect);
 
     // Desenha o canhão 2 na tela
-    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255); // Red color
+    SDL_SetRenderDrawColor(renderer, 139, 99, 92, 0); // Red color
     SDL_RenderFillRect(renderer, &cannon2Info->rect);
 
     // Desenha o helicóptero
-    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // Blue color
+    SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0); // Blue color
     SDL_RenderFillRect(renderer, &helicopterInfo->rect);
 
     int cannon1Inactive = 0;
@@ -382,10 +401,13 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    BridgeInfo bridgeInfo = createBridge(LEFT_BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
+    groundInfo = createScenarioElement(0, SCREEN_HEIGHT - GROUND_HEIGHT, SCREEN_WIDTH, GROUND_HEIGHT);
+    bridgeInfo = createScenarioElement(BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
+    leftBuilding = createScenarioElement(0, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
+    rightBuilding = createScenarioElement(SCREEN_WIDTH - BUILDING_WIDTH, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
 
-    CannonInfo cannon1Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
-    CannonInfo cannon2Info = createCannon(LEFT_BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
 
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
     
@@ -424,7 +446,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Chama a função que renderiza na tela
-        render(renderer, &bridgeInfo, &cannon1Info, &cannon2Info, &helicopterInfo);
+        render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
     }
 
     // Destrói as threads e a janela do SDL
