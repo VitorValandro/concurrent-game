@@ -22,12 +22,9 @@ const int MISSILE_HEIGHT = 15;
 const int CANNON_SPEED = 2;
 const int HELICOPTER_SPEED = 3;
 const int MISSILE_SPEED = 5;
-const int COOLDOWN_TIME = 2000;
-const int MAX_MISSILES = 5;
+const int COOLDOWN_TIME = 500;
+const int MAX_MISSILES = 10;
 const int AMMUNITION = MAX_MISSILES;
-
-// Mutex para controlar o acesso às posições dos mísseis
-pthread_mutex_t missileMutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -45,7 +42,7 @@ typedef struct {
     SDL_Rect rect;
     int speed;
     Uint32 lastShotTime;
-    MissileInfo *missiles;
+    MissileInfo *missiles; // ISSO AQUI DEVERIA SER MissileInfo ** ???
     int numActiveMissiles;
     int ammunition;
 
@@ -131,9 +128,6 @@ void* moveMissiles(void* arg) {
     MissileInfo* missileInfo = (MissileInfo*)arg;
 
     while (1) {
-        Uint32 currentTime = SDL_GetTicks();
-
-        pthread_mutex_lock(&missileMutex);
 
         if (missileInfo->active) {
             // Atualiza as posições lógicas do míssil se estiver ativo
@@ -145,8 +139,6 @@ void* moveMissiles(void* arg) {
                 missileInfo->active = false;
             }
         }
-
-        pthread_mutex_unlock(&missileMutex);
 
         SDL_Delay(10);
     }
@@ -230,7 +222,9 @@ void* moveCannon(void* arg) {
 }
 
 void* reloadCannonAmmunition(void* arg) {
-     CannonInfo* cannonInfo = (CannonInfo*)arg;
+    MoveCannonThreadParams* params = (MoveCannonThreadParams*)arg;
+    CannonInfo* cannonInfo = params->cannonInfo;
+    HelicopterInfo* helicopterInfo = params->helicopterInfo;
 
     while(1) {
         sem_wait(&cannonInfo->ammunition_semaphore_empty);
@@ -239,19 +233,20 @@ void* reloadCannonAmmunition(void* arg) {
             for (int i = 0; i < AMMUNITION; i++)
             {
                 printf("Recarregando munição do canhão: %d\n", i);
-                SDL_Delay(1000);
+                SDL_Delay(10);
             }
 
             cannonInfo->ammunition = AMMUNITION;
         }
+
+        cannonInfo->numActiveMissiles = 0;
+        helicopterInfo->num_missile_collision_rects = 0;
 
         sem_post(&cannonInfo->ammunition_semaphore);
     }
 }
 
 void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], int missiles_length) {
-    // Bloqueia o mutex porque atualização da tela tem exclusão mútua
-    pthread_mutex_lock(&missileMutex);
     for (int i = 0; i < missiles_length; i++)
     {
         if (&missiles[i]->active) {
@@ -261,7 +256,6 @@ void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], in
             }
         }
     }
-    pthread_mutex_unlock(&missileMutex);
 }
 
 void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int rects_length) {
@@ -349,8 +343,6 @@ void render(SDL_Renderer* renderer, BridgeInfo* bridgeInfo, CannonInfo* cannon1I
         
         else {
             pthread_cancel(cannon1Info->missiles[i].thread);
-            cannon1Inactive++;
-            helicopterInfo->num_missile_collision_rects--;
         }
     }
 
@@ -362,13 +354,8 @@ void render(SDL_Renderer* renderer, BridgeInfo* bridgeInfo, CannonInfo* cannon1I
        
         else {
             pthread_cancel(cannon2Info->missiles[i].thread);
-            cannon2Inactive++;
-            helicopterInfo->num_missile_collision_rects--;
         }
     }
-
-    cannon1Info->numActiveMissiles -= cannon1Inactive;
-    cannon2Info->numActiveMissiles -= cannon2Inactive;
 
     // Atualiza a tela
     SDL_RenderPresent(renderer);
@@ -419,8 +406,8 @@ int main(int argc, char* argv[]) {
     pthread_create(&thread_cannon1, NULL, moveCannon, &paramsCannon1);
     pthread_create(&thread_cannon2, NULL, moveCannon, &paramsCannon2);
     pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);
-    pthread_create(&thread_reload_cannon1, NULL, reloadCannonAmmunition, &cannon1Info);
-    pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &cannon2Info);
+    pthread_create(&thread_reload_cannon1, NULL, reloadCannonAmmunition, &paramsCannon1);
+    pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &paramsCannon2);
 
     srand(time(NULL)); // Seed pra gerar números aleatórios
 
