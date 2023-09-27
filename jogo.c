@@ -11,9 +11,9 @@
 const int SCREEN_WIDTH = 900;
 const int SCREEN_HEIGHT = 600;
 const int GROUND_HEIGHT = 100;
-const int BUILDING_WIDTH = 150;
+const int BUILDING_WIDTH = 175;
 const int BUILDING_HEIGHT = 300;
-const int BRIDGE_WIDTH = 100;
+const int BRIDGE_WIDTH = 150;
 const int BRIDGE_HEIGHT = GROUND_HEIGHT;
 const int CANNON_WIDTH = 50;
 const int CANNON_HEIGHT = 25;
@@ -27,8 +27,13 @@ const int MISSILE_SPEED = 5;
 const int COOLDOWN_TIME = 500;
 const int MAX_MISSILES = 10;
 const int AMMUNITION = MAX_MISSILES;
+const int NUM_HOSTAGES = 10;
+const int HOSTAGES_WIDTH = 7;
+const int HOSTAGES_HEIGHT = 14;
 
 pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
+int currentHostages = NUM_HOSTAGES;
+int rescuedHostages = 0;
 
 // Guarda as informações dos mísseis
 typedef struct {
@@ -44,7 +49,7 @@ typedef struct {
     SDL_Rect rect;
     int speed;
     Uint32 lastShotTime;
-    MissileInfo *missiles; // ISSO AQUI DEVERIA SER MissileInfo ** ???
+    MissileInfo *missiles;
     int numActiveMissiles;
     int ammunition;
 
@@ -59,6 +64,7 @@ typedef struct {
     SDL_Rect** fixed_collision_rects;
     MissileInfo** missile_collision_rects;
     int num_missile_collision_rects;
+    bool transportingHostage;
 } HelicopterInfo;
 
 typedef struct {
@@ -122,6 +128,7 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect*
     helicopterInfo.fixed_collision_rects = collisionRectArray;
     helicopterInfo.missile_collision_rects = (MissileInfo **)malloc(sizeof(MissileInfo *) * 20);
     helicopterInfo.num_missile_collision_rects = 0;
+    helicopterInfo.transportingHostage = false;
     return helicopterInfo;
 }
 
@@ -309,6 +316,18 @@ void* moveHelicopter(void* arg) {
             helicopterInfo->num_missile_collision_rects
         );
 
+        if (currentHostages > 0 && helicopterInfo->rect.x + HELICOPTER_WIDTH < BUILDING_WIDTH && !helicopterInfo->transportingHostage) {
+            helicopterInfo->transportingHostage = true;
+            currentHostages--;
+            printf("\nTRANSPORTANDO REFÉM\n");
+        }
+
+        if (rescuedHostages < NUM_HOSTAGES && helicopterInfo->rect.x > SCREEN_WIDTH - BUILDING_WIDTH && helicopterInfo->transportingHostage) {
+            helicopterInfo->transportingHostage = false;
+            rescuedHostages++;
+            printf("\nRESGATOU REFÉM\n");
+        }
+
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
     }
@@ -340,15 +359,17 @@ void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon
     SDL_RenderFillRect(renderer, &bridgeInfo.rect);
 
     // Desenha o canhão 1 na tela
-    SDL_SetRenderDrawColor(renderer, 252, 215, 87, 0); // Green color
+    SDL_SetRenderDrawColor(renderer, 252, 215, 87, 0);
     SDL_RenderFillRect(renderer, &cannon1Info->rect);
 
     // Desenha o canhão 2 na tela
-    SDL_SetRenderDrawColor(renderer, 139, 99, 92, 0); // Red color
+    SDL_SetRenderDrawColor(renderer, 139, 99, 92, 0);
     SDL_RenderFillRect(renderer, &cannon2Info->rect);
 
     // Desenha o helicóptero
-    SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0); // Blue color
+    if (helicopterInfo->transportingHostage) SDL_SetRenderDrawColor(renderer, 73, 159, 104, 0);
+    else SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0);
+    
     SDL_RenderFillRect(renderer, &helicopterInfo->rect);
 
     int cannon1Inactive = 0;
@@ -374,6 +395,27 @@ void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon
         else {
             pthread_cancel(cannon2Info->missiles[i].thread);
         }
+    }
+
+    // Desenha os reféns
+    for (int i = 0; i < currentHostages; i++) {
+        SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
+        SDL_Rect hostageRect;
+        hostageRect.w = HOSTAGES_WIDTH;
+        hostageRect.h = HOSTAGES_HEIGHT;
+        hostageRect.x = (HOSTAGES_WIDTH + 9) * (i+1);
+        hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
+        SDL_RenderFillRect(renderer, &hostageRect);
+    }
+
+    for (int i = 0; i < rescuedHostages; i++) {
+        SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
+        SDL_Rect hostageRect;
+        hostageRect.w = HOSTAGES_WIDTH;
+        hostageRect.h = HOSTAGES_HEIGHT;
+        hostageRect.x = SCREEN_WIDTH - (HOSTAGES_WIDTH + 9) * (i+1);
+        hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
+        SDL_RenderFillRect(renderer, &hostageRect);
     }
 
     // Atualiza a tela
