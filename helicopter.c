@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <pthread.h>
 #include "helicopter.h"
+#include "scenario.h"
 
 extern int currentHostages;
 extern int rescuedHostages;
@@ -11,9 +12,12 @@ extern int NUM_HOSTAGES;
 extern int SCREEN_WIDTH;
 extern int BUILDING_WIDTH;
 extern int SCREEN_HEIGHT;
+extern ScenarioElementInfo rightBuilding;
+extern ScenarioElementInfo leftBuilding;
 
-// Função pra criar um objeto
-HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect** collisionRectArray) {
+// Função pra criar um helicótero
+HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect **collisionRectArray)
+{
     HelicopterInfo helicopterInfo;
     helicopterInfo.rect.x = x;
     helicopterInfo.rect.y = y;
@@ -27,73 +31,89 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect*
     return helicopterInfo;
 }
 
-void addHelicopterCollisionMissile(HelicopterInfo* helicopter, MissileInfo* missile) {
+void addHelicopterCollisionMissile(HelicopterInfo *helicopter, MissileInfo *missile)
+{
     helicopter->missile_collision_rects[helicopter->num_missile_collision_rects] = missile;
     helicopter->num_missile_collision_rects++;
 }
 
-void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo* missiles[], int missiles_length) {
+void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo *missiles[], int missiles_length)
+{
     for (int i = 0; i < missiles_length; i++)
     {
-        if (&missiles[i]->active) {
+        if (&missiles[i]->active)
+        {
             SDL_Rect *collisionRect = &missiles[i]->rect;
-            if (SDL_HasIntersection(&helicopterRect, collisionRect)) {   
+            if (SDL_HasIntersection(&helicopterRect, collisionRect))
+            {
                 printf("Collision detected with missile %d\n", i);
             }
         }
     }
 }
 
-void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect* rects[], int rects_length) {
+void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect *rects[], int rects_length)
+{
     for (int i = 0; i < rects_length; i++)
     {
         SDL_Rect *collisionRect = rects[i];
-            if (SDL_HasIntersection(&helicopterRect, collisionRect)) {
-                printf("Collision detected with rect %d\n", i);
-            }
+        if (SDL_HasIntersection(&helicopterRect, collisionRect))
+        {
+            printf("Collision detected with rect %d\n", i);
+        }
     }
 }
 
 // Função concorrente para mover o helicóptero que é controlado pelo usuário
-void* moveHelicopter(void* arg) {
-    HelicopterInfo* helicopterInfo = (HelicopterInfo*)arg;
+void *moveHelicopter(void *arg)
+{
+    HelicopterInfo *helicopterInfo = (HelicopterInfo *)arg;
 
-    while (1) {
-        const Uint8* keystates = SDL_GetKeyboardState(NULL);
+    while (1)
+    {
+        const Uint8 *keystates = SDL_GetKeyboardState(NULL);
 
         // Checa o estado atual do teclado pra ver se está pressionado
-        if (keystates[SDL_SCANCODE_LEFT]) {
+        if (keystates[SDL_SCANCODE_LEFT])
+        {
             helicopterInfo->rect.x -= helicopterInfo->speed;
         }
-        if (keystates[SDL_SCANCODE_RIGHT]) {
+        if (keystates[SDL_SCANCODE_RIGHT])
+        {
             helicopterInfo->rect.x += helicopterInfo->speed;
         }
-        if (keystates[SDL_SCANCODE_UP]) {
+        if (keystates[SDL_SCANCODE_UP])
+        {
             helicopterInfo->rect.y -= helicopterInfo->speed;
         }
-        if (keystates[SDL_SCANCODE_DOWN]) {
+        if (keystates[SDL_SCANCODE_DOWN])
+        {
             helicopterInfo->rect.y += helicopterInfo->speed;
         }
 
+        // checa colisão com canhões e objetos do cenário
         checkHelicopterCollisions(
             helicopterInfo->rect,
             helicopterInfo->fixed_collision_rects,
-            2
-        );
+            5);
 
+        // checa colisão com os mísseis
         checkMissileCollisions(
             helicopterInfo->rect,
             helicopterInfo->missile_collision_rects,
-            helicopterInfo->num_missile_collision_rects
-        );
+            helicopterInfo->num_missile_collision_rects);
 
-        if (currentHostages > 0 && helicopterInfo->rect.x + HELICOPTER_WIDTH < BUILDING_WIDTH && !helicopterInfo->transportingHostage) {
+        // se está no topo do prédio esquerdo e ainda há reféns, inicia o transporte do refém
+        if (currentHostages > 0 && helicopterInfo->rect.x + HELICOPTER_WIDTH < BUILDING_WIDTH && !helicopterInfo->transportingHostage)
+        {
             helicopterInfo->transportingHostage = true;
             currentHostages--;
             printf("\nTRANSPORTANDO REFÉM\n");
         }
 
-        if (rescuedHostages < NUM_HOSTAGES && helicopterInfo->rect.x > SCREEN_WIDTH - BUILDING_WIDTH && helicopterInfo->transportingHostage) {
+        // se está no topo do prédio à direita e está transportando um refém, finaliza o resgate
+        if (rescuedHostages < NUM_HOSTAGES && helicopterInfo->rect.x > SCREEN_WIDTH - BUILDING_WIDTH && helicopterInfo->transportingHostage)
+        {
             helicopterInfo->transportingHostage = false;
             rescuedHostages++;
             printf("\nRESGATOU REFÉM\n");
@@ -106,21 +126,33 @@ void* moveHelicopter(void* arg) {
     return NULL;
 }
 
-
 // Função concorrente para mover os mísseis
-void* moveMissiles(void* arg) {
-    MissileInfo* missileInfo = (MissileInfo*)arg;
+void *moveMissiles(void *arg)
+{
+    MissileInfo *missileInfo = (MissileInfo *)arg;
 
-    while (1) {
+    while (1)
+    {
 
-        if (missileInfo->active) {
+        if (missileInfo->active)
+        {
             // Atualiza as posições lógicas do míssil se estiver ativo
             missileInfo->rect.x += (int)(missileInfo->speed * cos(missileInfo->angle));
             missileInfo->rect.y -= (int)(missileInfo->speed * sin(missileInfo->angle));
 
             // Desativa o míssil se ele sair da tela
-            if (missileInfo->rect.x < 0 || missileInfo->rect.x > SCREEN_WIDTH || missileInfo->rect.y < 0 || missileInfo->rect.y > SCREEN_HEIGHT) {
+            if (
+                missileInfo->rect.x < 0 ||
+                missileInfo->rect.x > SCREEN_WIDTH ||
+                missileInfo->rect.y < 0 ||
+                missileInfo->rect.y > SCREEN_HEIGHT ||
+                SDL_HasIntersection(&missileInfo->rect, &rightBuilding.rect) ||
+                SDL_HasIntersection(&missileInfo->rect, &leftBuilding.rect))
+            {
                 missileInfo->active = false;
+
+                // se o míssil não estiver mais ativo, destrói sua thread
+                pthread_cancel(missileInfo->thread);
             }
         }
 

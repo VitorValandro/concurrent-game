@@ -8,7 +8,8 @@
 #ifndef CANNON_H
 #define CANNON_H
 // Guarda as informações dos objetos
-typedef struct {
+typedef struct
+{
     SDL_Rect rect;
     int speed;
     Uint32 lastShotTime;
@@ -17,18 +18,19 @@ typedef struct {
     int ammunition;
 
     sem_t ammunition_semaphore_empty;
-    sem_t ammunition_semaphore;
+    sem_t ammunition_semaphore_full;
     pthread_mutex_t reloadingLock;
 } CannonInfo;
 
-typedef struct {
-    HelicopterInfo* helicopterInfo;
-    CannonInfo* cannonInfo;
+typedef struct
+{
+    HelicopterInfo *helicopterInfo;
+    CannonInfo *cannonInfo;
 } MoveCannonThreadParams;
 
 CannonInfo createCannon(int x, int y, int w, int h);
-void* moveCannon(void* arg);
-void* reloadCannonAmmunition(void* arg);
-void createMissile(CannonInfo* cannon, HelicopterInfo* helicopter);
+void *moveCannon(void *arg);
+void *reloadCannonAmmunition(void *arg);
+void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter);
 
 #endif /* CANNON_H */

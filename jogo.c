@@ -8,6 +8,7 @@
 #include <semaphore.h>
 #include "helicopter.h"
 #include "cannon.h"
+#include "scenario.h"
 
 // Constantes
 const int SCREEN_WIDTH = 900;
@@ -32,33 +33,22 @@ const int AMMUNITION = MAX_MISSILES;
 const int NUM_HOSTAGES = 10;
 const int HOSTAGES_WIDTH = 7;
 const int HOSTAGES_HEIGHT = 14;
+const int RELOAD_TIME_FOR_EACH_MISSILE = 10; // milisegundos
 
-pthread_mutex_t cannonMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t bridgeMutex = PTHREAD_MUTEX_INITIALIZER;
+
 int currentHostages = NUM_HOSTAGES;
 int rescuedHostages = 0;
-
-typedef struct {
-    SDL_Rect rect;
-} ScenarioElementInfo;
 
 ScenarioElementInfo groundInfo;
 ScenarioElementInfo bridgeInfo;
 ScenarioElementInfo leftBuilding;
 ScenarioElementInfo rightBuilding;
 
-// Função pra criar um objeto
-ScenarioElementInfo createScenarioElement(int x, int y, int w, int h) {
-    ScenarioElementInfo rectInfo;
-    rectInfo.rect.x = x;
-    rectInfo.rect.y = y;
-    rectInfo.rect.w = w;
-    rectInfo.rect.h = h;
-    return rectInfo;
-}
-
 // Função pra renderizar os objetos
 // Isso não pode ser concorrente porque a tela que o usuário vê é uma zona de exclusão mútua
-void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon2Info, HelicopterInfo* helicopterInfo) {
+void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2Info, HelicopterInfo *helicopterInfo)
+{
     // Limpa a tela
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
@@ -88,53 +78,51 @@ void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon
     SDL_RenderFillRect(renderer, &cannon2Info->rect);
 
     // Desenha o helicóptero
-    if (helicopterInfo->transportingHostage) SDL_SetRenderDrawColor(renderer, 73, 159, 104, 0);
-    else SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0);
-    
+    if (helicopterInfo->transportingHostage)
+        SDL_SetRenderDrawColor(renderer, 73, 159, 104, 0);
+    else
+        SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0);
     SDL_RenderFillRect(renderer, &helicopterInfo->rect);
 
-    int cannon1Inactive = 0;
-    int cannon2Inactive = 0;
-
-    for (int i = 0; i < cannon1Info->numActiveMissiles; i++) {
-        if (cannon1Info->missiles[i].active) {
+    // Desenha os mísseis do canhão 1
+    for (int i = 0; i < cannon1Info->numActiveMissiles; i++)
+    {
+        if (cannon1Info->missiles[i].active)
+        {
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon1Info->missiles[i].rect);
         }
-        
-        else {
-            pthread_cancel(cannon1Info->missiles[i].thread);
-        }
     }
 
-    for (int i = 0; i < cannon2Info->numActiveMissiles; i++) {
-        if (cannon2Info->missiles[i].active){
+    // Desenha os mísseis do canhão 2
+    for (int i = 0; i < cannon2Info->numActiveMissiles; i++)
+    {
+        if (cannon2Info->missiles[i].active)
+        {
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &cannon2Info->missiles[i].rect);
-        }
-       
-        else {
-            pthread_cancel(cannon2Info->missiles[i].thread);
         }
     }
 
     // Desenha os reféns
-    for (int i = 0; i < currentHostages; i++) {
+    for (int i = 0; i < currentHostages; i++)
+    {
         SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
         SDL_Rect hostageRect;
         hostageRect.w = HOSTAGES_WIDTH;
         hostageRect.h = HOSTAGES_HEIGHT;
-        hostageRect.x = (HOSTAGES_WIDTH + 9) * (i+1);
+        hostageRect.x = (HOSTAGES_WIDTH + 9) * (i + 1);
         hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
         SDL_RenderFillRect(renderer, &hostageRect);
     }
 
-    for (int i = 0; i < rescuedHostages; i++) {
+    for (int i = 0; i < rescuedHostages; i++)
+    {
         SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
         SDL_Rect hostageRect;
         hostageRect.w = HOSTAGES_WIDTH;
         hostageRect.h = HOSTAGES_HEIGHT;
-        hostageRect.x = SCREEN_WIDTH - (HOSTAGES_WIDTH + 9) * (i+1);
+        hostageRect.x = SCREEN_WIDTH - (HOSTAGES_WIDTH + 9) * (i + 1);
         hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
         SDL_RenderFillRect(renderer, &hostageRect);
     }
@@ -143,39 +131,50 @@ void render(SDL_Renderer* renderer,  CannonInfo* cannon1Info, CannonInfo* cannon
     SDL_RenderPresent(renderer);
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
     // Inicializa o SDL
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0)
+    {
         printf("Problema ao inicializar SDL. Erro: %s\n", SDL_GetError());
         return 1;
     }
 
     // Cria uma janela SDL
-    SDL_Window* window = SDL_CreateWindow("Jogo Concorrente", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
-    if (window == NULL) {
+    SDL_Window *window = SDL_CreateWindow("Jogo Concorrente", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    if (window == NULL)
+    {
         printf("Não foi possível abrir a janela do SDL. Erro: %s\n", SDL_GetError());
         return 1;
     }
 
     // Cria um renderizador SDL
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-    if (renderer == NULL) {
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (renderer == NULL)
+    {
         printf("Renderizador do SDL não pôde ser criado. Erro: %s\n", SDL_GetError());
         return 1;
     }
 
+    // Cria os elementos do cenário
     groundInfo = createScenarioElement(0, SCREEN_HEIGHT - GROUND_HEIGHT, SCREEN_WIDTH, GROUND_HEIGHT);
     bridgeInfo = createScenarioElement(BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
     leftBuilding = createScenarioElement(0, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
     rightBuilding = createScenarioElement(SCREEN_WIDTH - BUILDING_WIDTH, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
 
-    CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
-    CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    // Cria os canhões
+    CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 4, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
 
-    SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 2);
-    
+    // Inicializa o array de colisões para o helicóptero
+    SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 5);
+
     rectArray[0] = &cannon1Info.rect;
     rectArray[1] = &cannon2Info.rect;
+    rectArray[2] = &groundInfo.rect;
+    rectArray[3] = &leftBuilding.rect;
+    rectArray[4] = &rightBuilding.rect;
+
     HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
 
     MoveCannonThreadParams paramsCannon1;
@@ -188,22 +187,25 @@ int main(int argc, char* argv[]) {
 
     // Inicializa as threads
     pthread_t thread_cannon1, thread_cannon2, thread_helicopter, thread_reload_cannon1, thread_reload_cannon2;
-    pthread_create(&thread_cannon1, NULL, moveCannon, &paramsCannon1);
-    pthread_create(&thread_cannon2, NULL, moveCannon, &paramsCannon2);
-    pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);
-    pthread_create(&thread_reload_cannon1, NULL, reloadCannonAmmunition, &paramsCannon1);
-    pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &paramsCannon2);
+    pthread_create(&thread_cannon1, NULL, moveCannon, &paramsCannon1);                    // thread do canhão 1
+    pthread_create(&thread_cannon2, NULL, moveCannon, &paramsCannon2);                    // thread do canhão 2
+    pthread_create(&thread_helicopter, NULL, moveHelicopter, &helicopterInfo);            // thread do helicóptero
+    pthread_create(&thread_reload_cannon1, NULL, reloadCannonAmmunition, &paramsCannon1); // thread do depósito do canhão 1
+    pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &paramsCannon2); // thread do depósito do canhão 2
 
-    srand(time(NULL)); // Seed pra gerar números aleatórios
+    srand(time(NULL)); // Seed pra gerar números aleatórios usados no cálculo do ângulo do míssil
 
     // Game loop
     int quit = 0;
     SDL_Event e;
 
-    while (!quit) {
+    while (!quit)
+    {
         // Escuta o evento pra fechar a tela do jogo
-        while (SDL_PollEvent(&e) != 0) {
-            if (e.type == SDL_QUIT) {
+        while (SDL_PollEvent(&e) != 0)
+        {
+            if (e.type == SDL_QUIT)
+            {
                 quit = 1;
             }
         }
@@ -221,8 +223,8 @@ int main(int argc, char* argv[]) {
 
     sem_destroy(&cannon1Info.ammunition_semaphore_empty);
     sem_destroy(&cannon2Info.ammunition_semaphore_empty);
-    sem_destroy(&cannon1Info.ammunition_semaphore);
-    sem_destroy(&cannon2Info.ammunition_semaphore);
+    sem_destroy(&cannon1Info.ammunition_semaphore_full);
+    sem_destroy(&cannon2Info.ammunition_semaphore_full);
 
     free(cannon1Info.missiles);
     free(cannon2Info.missiles);

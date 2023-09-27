@@ -17,11 +17,13 @@ extern int BRIDGE_WIDTH;
 extern int MISSILE_WIDTH;
 extern int MISSILE_HEIGHT;
 extern int MISSILE_SPEED;
+extern int RELOAD_TIME_FOR_EACH_MISSILE;
 
-extern pthread_mutex_t cannonMutex;
+extern pthread_mutex_t bridgeMutex;
 
-// Função pra criar um objeto
-CannonInfo createCannon(int x, int y, int w, int h) {
+// Função pra criar um canhão
+CannonInfo createCannon(int x, int y, int w, int h)
+{
     CannonInfo cannonInfo;
     cannonInfo.rect.x = x;
     cannonInfo.rect.y = y;
@@ -38,7 +40,7 @@ CannonInfo createCannon(int x, int y, int w, int h) {
     sem_init(&ammo_sem, 0, 1);
 
     cannonInfo.ammunition_semaphore_empty = sem_empty;
-    cannonInfo.ammunition_semaphore = ammo_sem;
+    cannonInfo.ammunition_semaphore_full = ammo_sem;
 
     pthread_mutex_t lock;
     cannonInfo.reloadingLock = lock;
@@ -47,29 +49,61 @@ CannonInfo createCannon(int x, int y, int w, int h) {
 }
 
 // Função concorrente para mover a posição lógica dos canhões
-void* moveCannon(void* arg) {
-    MoveCannonThreadParams* params = (MoveCannonThreadParams*)arg;
-    CannonInfo* cannonInfo = params->cannonInfo;
-    HelicopterInfo* helicopterInfo = params->helicopterInfo;
+void *moveCannon(void *arg)
+{
+    MoveCannonThreadParams *params = (MoveCannonThreadParams *)arg;
+    CannonInfo *cannonInfo = params->cannonInfo;
+    HelicopterInfo *helicopterInfo = params->helicopterInfo;
 
-    while (1) {
-        if (cannonInfo->ammunition == 0)
+    while (1)
+    {
+        // Verifica se o canhão está em cima da ponte
+        if (cannonInfo->rect.x + CANNON_WIDTH > BUILDING_WIDTH && cannonInfo->rect.x < BUILDING_WIDTH + BRIDGE_WIDTH)
         {
-            pthread_mutex_lock(&cannonMutex);
-            if (cannonInfo->rect.x < BUILDING_WIDTH - CANNON_WIDTH * 1.5)
+            // se estiver, bloqueia a passagem na ponte para os demais canhões
+            pthread_mutex_lock(&bridgeMutex);
+
+            // enquanto estiver em cima da ponte, se desloca para sair dela enquanto outros canhões estão bloqueados
+            while (
+                cannonInfo->rect.x + CANNON_WIDTH > BUILDING_WIDTH &&
+                cannonInfo->rect.x < BUILDING_WIDTH + BRIDGE_WIDTH)
             {
-                sem_post(&cannonInfo->ammunition_semaphore_empty);
-                sem_wait(&cannonInfo->ammunition_semaphore);
+                // se estiver sem munição, se desloca em direção ao depósito (esquerda)
+                if (cannonInfo->ammunition == 0)
+                    cannonInfo->rect.x -= abs(cannonInfo->speed);
+                else
+                    cannonInfo->rect.x += abs(cannonInfo->speed);
+
+                // Espera 10ms pra controlar a velocidade
+                SDL_Delay(10);
             }
-            else {
-                cannonInfo->rect.x -= abs(cannonInfo->speed);
-            }
-            pthread_mutex_unlock(&cannonMutex);
+
+            // quando terminar a passagem pela ponte, libera o mutex da ponte
+            pthread_mutex_unlock(&bridgeMutex);
         }
 
-        else {
+        if (cannonInfo->ammunition == 0)
+        {
+            // se está sem munição, desloca-se para o depósito
+            if (cannonInfo->rect.x < BUILDING_WIDTH - CANNON_WIDTH)
+            {
+                // se está no depósito, libera o semáforo para a thread produtora de munições
+                sem_post(&cannonInfo->ammunition_semaphore_empty);
+                // espera até a munição ser recarregada
+                sem_wait(&cannonInfo->ammunition_semaphore_full);
+            }
+            else
+            {
+                cannonInfo->rect.x -= abs(cannonInfo->speed);
+            }
+        }
+
+        else
+        {
             Uint32 currentTime = SDL_GetTicks();
-            if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME) {
+            // verifica se está na hora de disparar outro míssil
+            if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME)
+            {
                 createMissile(cannonInfo, helicopterInfo);
                 cannonInfo->lastShotTime = currentTime;
             }
@@ -77,15 +111,12 @@ void* moveCannon(void* arg) {
             // Atualiza a posição do canhão
             cannonInfo->rect.x += cannonInfo->speed;
 
-            // Se o canhão alcançar o limite da tela, volta
-            if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH) {
+            // Se o canhão alcançar os limites, inverte a direção
+            if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH)
                 cannonInfo->speed = -CANNON_SPEED;
-            }
-            else if (cannonInfo->rect.x < BUILDING_WIDTH + BRIDGE_WIDTH)
-            {
+            else if (cannonInfo->rect.x <= BUILDING_WIDTH + BRIDGE_WIDTH)
                 cannonInfo->speed = CANNON_SPEED;
-            }
-        }  
+        }
 
         // Espera 10ms pra controlar a velocidade
         SDL_Delay(10);
@@ -94,51 +125,62 @@ void* moveCannon(void* arg) {
     return NULL;
 }
 
-void* reloadCannonAmmunition(void* arg) {
-    MoveCannonThreadParams* params = (MoveCannonThreadParams*)arg;
-    CannonInfo* cannonInfo = params->cannonInfo;
-    HelicopterInfo* helicopterInfo = params->helicopterInfo;
+// thread para os depósitos produtores de munição
+void *reloadCannonAmmunition(void *arg)
+{
+    MoveCannonThreadParams *params = (MoveCannonThreadParams *)arg;
+    CannonInfo *cannonInfo = params->cannonInfo;
+    HelicopterInfo *helicopterInfo = params->helicopterInfo;
 
-    while(1) {
+    while (1)
+    {
+        // espera até sinalizar que a munição está vazia
         sem_wait(&cannonInfo->ammunition_semaphore_empty);
 
-        if (cannonInfo->ammunition == 0) {
+        if (cannonInfo->ammunition == 0)
+        {
             for (int i = 0; i < AMMUNITION; i++)
             {
                 printf("Recarregando munição do canhão: %d\n", i);
-                SDL_Delay(10);
+                SDL_Delay(RELOAD_TIME_FOR_EACH_MISSILE);
             }
 
+            // recarrega a munição do canhão
             cannonInfo->ammunition = AMMUNITION;
         }
 
+        // libera o array de threads dos mísseis ativos e de retângulos de colisão
         cannonInfo->numActiveMissiles = 0;
         helicopterInfo->num_missile_collision_rects = 0;
 
-        sem_post(&cannonInfo->ammunition_semaphore);
+        // sinaliza que finalizou a produção da munição
+        sem_post(&cannonInfo->ammunition_semaphore_full);
     }
 }
 
 // Função pra criar um míssil
-void createMissile(CannonInfo* cannon, HelicopterInfo* helicopter) {
-    if (cannon->ammunition == 0) {
+void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter)
+{
+    if (cannon->ammunition == 0)
+    {
         return;
     }
 
-    // Initialize the new missile
     MissileInfo *missile = &cannon->missiles[cannon->numActiveMissiles];
     missile->rect.w = MISSILE_WIDTH;
     missile->rect.h = MISSILE_HEIGHT;
-    missile->rect.x = cannon->rect.x + (CANNON_WIDTH - MISSILE_WIDTH) / 2; 
+    missile->rect.x = cannon->rect.x + (CANNON_WIDTH - MISSILE_WIDTH) / 2;
     missile->rect.y = cannon->rect.y;
     missile->speed = MISSILE_SPEED;
     missile->active = true;
     missile->angle = ((rand() % 120) * M_PI / 180.0);
 
+    // cria a thread desse míssil
     pthread_t newThread;
     pthread_create(&newThread, NULL, moveMissiles, &cannon->missiles[cannon->numActiveMissiles]);
     missile->thread = newThread;
 
+    // adiciona o míssil no array de colisores do helicóptero
     addHelicopterCollisionMissile(helicopter, &cannon->missiles[cannon->numActiveMissiles]);
 
     cannon->numActiveMissiles++;
