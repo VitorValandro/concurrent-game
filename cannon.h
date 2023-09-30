@@ -33,7 +33,7 @@ CannonInfo createCannon(int x, int y, int w, int h);
 void *moveCannon(void *arg);
 void *reloadCannonAmmunition(void *arg);
 void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter);
-void loadSprite(CannonInfo *cannon, char *spritesheet_path, SDL_Renderer* renderer);
+void loadCannonSprite(CannonInfo *cannon, SDL_Renderer* renderer);
 void drawCannon(CannonInfo* cannon, SDL_Renderer* renderer);
 
 #endif /* CANNON_H */

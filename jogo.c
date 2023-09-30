@@ -12,8 +12,8 @@
 #include "scenario.h"
 
 // Constantes
-const int SCREEN_WIDTH = 900;
-const int SCREEN_HEIGHT = 600;
+const int SCREEN_WIDTH = 1100;
+const int SCREEN_HEIGHT = 700;
 const int GROUND_HEIGHT = 100;
 const int BUILDING_WIDTH = 175;
 const int BUILDING_HEIGHT = 300;
@@ -21,8 +21,8 @@ const int BRIDGE_WIDTH = 150;
 const int BRIDGE_HEIGHT = GROUND_HEIGHT;
 const int CANNON_WIDTH = 100;
 const int CANNON_HEIGHT = 50;
-const int HELICOPTER_WIDTH = 90;
-const int HELICOPTER_HEIGHT = 30;
+const int HELICOPTER_WIDTH = 150;
+const int HELICOPTER_HEIGHT = 75;
 const int MISSILE_WIDTH = 5;
 const int MISSILE_HEIGHT = 15;
 const int CANNON_SPEED = 2;
@@ -51,7 +51,7 @@ ScenarioElementInfo rightBuilding;
 void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2Info, HelicopterInfo *helicopterInfo)
 {
     // Limpa a tela
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_SetRenderDrawColor(renderer, 188, 170, 164, 255);
     SDL_RenderClear(renderer);
 
     // Desenha a plataforma da esquerda na tela
@@ -70,18 +70,10 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
     SDL_SetRenderDrawColor(renderer, 94, 91, 82, 0);
     SDL_RenderFillRect(renderer, &bridgeInfo.rect);
 
-    // Desenha o canhão 1 na tela
     drawCannon(cannon1Info, renderer);
-
-    // Desenha o canhão 2 na tela
     drawCannon(cannon2Info, renderer);
 
-    // Desenha o helicóptero
-    if (helicopterInfo->transportingHostage)
-        SDL_SetRenderDrawColor(renderer, 73, 159, 104, 0);
-    else
-        SDL_SetRenderDrawColor(renderer, 141, 152, 167, 0);
-    SDL_RenderFillRect(renderer, &helicopterInfo->rect);
+    drawHelicopter(helicopterInfo, renderer);
 
     // Desenha os mísseis do canhão 1
     for (int i = 0; i < cannon1Info->numActiveMissiles; i++)
@@ -167,8 +159,8 @@ int main(int argc, char *argv[])
     CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
     CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 4, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
     
-    loadSprite(&cannon1Info, "cannon_spritesheet.png", renderer);
-    loadSprite(&cannon2Info, "cannon_spritesheet.png", renderer);
+    loadCannonSprite(&cannon1Info, renderer);
+    loadCannonSprite(&cannon2Info, renderer);
 
     // Inicializa o array de colisões para o helicóptero
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 5);
@@ -180,7 +172,8 @@ int main(int argc, char *argv[])
     rectArray[4] = &rightBuilding.rect;
 
     HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
-
+    loadHelicopterSprite(&helicopterInfo, renderer);
+   
     MoveCannonThreadParams paramsCannon1;
     paramsCannon1.helicopterInfo = &helicopterInfo;
     paramsCannon1.cannonInfo = &cannon1Info;

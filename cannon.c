@@ -189,8 +189,8 @@ void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter)
     printf("Created new missile: %d\n", cannon->ammunition);
 }
 
-void loadSprite(CannonInfo *cannon, char *spritesheet_path, SDL_Renderer* renderer) {
-    SDL_Surface * image = IMG_Load(spritesheet_path);
+void loadCannonSprite(CannonInfo *cannon, SDL_Renderer* renderer) {
+    SDL_Surface * image = IMG_Load("cannon_spritesheet.png");
     cannon->texture = SDL_CreateTextureFromSurface(renderer, image);
 }
 

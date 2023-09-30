@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <pthread.h>
 #include "helicopter.h"
@@ -28,6 +29,7 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect 
     helicopterInfo.missile_collision_rects = (MissileInfo **)malloc(sizeof(MissileInfo *) * 20);
     helicopterInfo.num_missile_collision_rects = 0;
     helicopterInfo.transportingHostage = false;
+    helicopterInfo.currentMovement = 0;
     return helicopterInfo;
 }
 
@@ -71,16 +73,19 @@ void *moveHelicopter(void *arg)
 
     while (1)
     {
+        helicopterInfo->currentMovement = 0;
         const Uint8 *keystates = SDL_GetKeyboardState(NULL);
 
         // Checa o estado atual do teclado pra ver se está pressionado
         if (keystates[SDL_SCANCODE_LEFT])
         {
             helicopterInfo->rect.x -= helicopterInfo->speed;
+            helicopterInfo->currentMovement = 1;
         }
         if (keystates[SDL_SCANCODE_RIGHT])
         {
             helicopterInfo->rect.x += helicopterInfo->speed;
+            helicopterInfo->currentMovement = 2;
         }
         if (keystates[SDL_SCANCODE_UP])
         {
@@ -160,4 +165,30 @@ void *moveMissiles(void *arg)
     }
 
     return NULL;
+}
+
+void loadHelicopterSprite(HelicopterInfo *helicopter, SDL_Renderer* renderer) {
+    SDL_Surface * image = IMG_Load("helicopter_spritesheet.png");
+    helicopter->texture = SDL_CreateTextureFromSurface(renderer, image);
+}
+
+void drawHelicopter(HelicopterInfo *helicopter, SDL_Renderer* renderer) {	
+    Uint32 ticks = SDL_GetTicks();
+    Uint32 ms = ticks / 200;
+    
+    int angleWhenMoving = 15;
+    int angleDirection = 0;
+
+    SDL_RendererFlip helicopterHorizontalDirection;
+    if (helicopter->currentMovement == 1) {
+        helicopterHorizontalDirection = SDL_FLIP_HORIZONTAL;
+        angleDirection = 345;
+    }
+    else if (helicopter->currentMovement == 2) {
+        helicopterHorizontalDirection = SDL_FLIP_NONE;
+        angleDirection = 15;
+    }
+
+    SDL_Rect srcrect = {(ms % 4) * 100, helicopter->transportingHostage * 50, 100, 50};
+    SDL_RenderCopyEx(renderer, helicopter->texture, &srcrect, &helicopter->rect, angleDirection, NULL, helicopterHorizontalDirection);
 }
