@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -18,8 +19,8 @@ const int BUILDING_WIDTH = 175;
 const int BUILDING_HEIGHT = 300;
 const int BRIDGE_WIDTH = 150;
 const int BRIDGE_HEIGHT = GROUND_HEIGHT;
-const int CANNON_WIDTH = 50;
-const int CANNON_HEIGHT = 25;
+const int CANNON_WIDTH = 100;
+const int CANNON_HEIGHT = 50;
 const int HELICOPTER_WIDTH = 90;
 const int HELICOPTER_HEIGHT = 30;
 const int MISSILE_WIDTH = 5;
@@ -70,12 +71,10 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
     SDL_RenderFillRect(renderer, &bridgeInfo.rect);
 
     // Desenha o canhão 1 na tela
-    SDL_SetRenderDrawColor(renderer, 252, 215, 87, 0);
-    SDL_RenderFillRect(renderer, &cannon1Info->rect);
+    drawCannon(cannon1Info, renderer);
 
     // Desenha o canhão 2 na tela
-    SDL_SetRenderDrawColor(renderer, 139, 99, 92, 0);
-    SDL_RenderFillRect(renderer, &cannon2Info->rect);
+    drawCannon(cannon2Info, renderer);
 
     // Desenha o helicóptero
     if (helicopterInfo->transportingHostage)
@@ -140,6 +139,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    SDL_Init(SDL_INIT_VIDEO);
+
     // Cria uma janela SDL
     SDL_Window *window = SDL_CreateWindow("Jogo Concorrente", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
     if (window == NULL)
@@ -165,6 +166,9 @@ int main(int argc, char *argv[])
     // Cria os canhões
     CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
     CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 4, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    
+    loadSprite(&cannon1Info, "cannon_spritesheet.png", renderer);
+    loadSprite(&cannon2Info, "cannon_spritesheet.png", renderer);
 
     // Inicializa o array de colisões para o helicóptero
     SDL_Rect **rectArray = (SDL_Rect **)malloc(sizeof(SDL_Rect *) * 5);

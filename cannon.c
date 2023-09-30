@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_image.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <pthread.h>
@@ -112,7 +113,7 @@ void *moveCannon(void *arg)
             cannonInfo->rect.x += cannonInfo->speed;
 
             // Se o canhão alcançar os limites, inverte a direção
-            if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH)
+            if (cannonInfo->rect.x + CANNON_WIDTH > SCREEN_WIDTH - BUILDING_WIDTH)
                 cannonInfo->speed = -CANNON_SPEED;
             else if (cannonInfo->rect.x <= BUILDING_WIDTH + BRIDGE_WIDTH)
                 cannonInfo->speed = CANNON_SPEED;
@@ -186,4 +187,17 @@ void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter)
     cannon->numActiveMissiles++;
     cannon->ammunition--;
     printf("Created new missile: %d\n", cannon->ammunition);
+}
+
+void loadSprite(CannonInfo *cannon, char *spritesheet_path, SDL_Renderer* renderer) {
+    SDL_Surface * image = IMG_Load(spritesheet_path);
+    cannon->texture = SDL_CreateTextureFromSurface(renderer, image);
+}
+
+void drawCannon(CannonInfo *cannon, SDL_Renderer* renderer) {	
+    Uint32 ticks = SDL_GetTicks();
+    Uint32 ms = ticks / 200;
+    
+    SDL_Rect srcrect = {(ms % 3) * 50, 225 - (cannon->ammunition % 10) * 25, 50, 25 };
+    SDL_RenderCopy(renderer, cannon->texture, &srcrect, &cannon->rect);
 }
