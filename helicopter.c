@@ -15,6 +15,7 @@ extern int BUILDING_WIDTH;
 extern int SCREEN_HEIGHT;
 extern ScenarioElementInfo rightBuilding;
 extern ScenarioElementInfo leftBuilding;
+extern bool destroyed;
 
 // Função pra criar um helicótero
 HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect **collisionRectArray)
@@ -48,7 +49,7 @@ void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo *missiles[], in
             SDL_Rect *collisionRect = &missiles[i]->rect;
             if (SDL_HasIntersection(&helicopterRect, collisionRect))
             {
-                printf("Collision detected with missile %d\n", i);
+                destroyed = true;
             }
         }
     }
@@ -61,7 +62,7 @@ void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect *rects[], int r
         SDL_Rect *collisionRect = rects[i];
         if (SDL_HasIntersection(&helicopterRect, collisionRect))
         {
-            printf("Collision detected with rect %d\n", i);
+            destroyed = true;
         }
     }
 }

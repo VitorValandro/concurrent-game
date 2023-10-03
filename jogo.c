@@ -35,11 +35,15 @@ const int NUM_HOSTAGES = 10;
 const int HOSTAGES_WIDTH = 7;
 const int HOSTAGES_HEIGHT = 14;
 const int RELOAD_TIME_FOR_EACH_MISSILE = 10; // milisegundos
+const int EXPLOSION_SIZE = 75;
 
 pthread_mutex_t bridgeMutex = PTHREAD_MUTEX_INITIALIZER;
 
 int currentHostages = NUM_HOSTAGES;
 int rescuedHostages = 0;
+
+bool destroyed = false;
+bool gameover = false;
 
 ScenarioElementInfo groundInfo;
 ScenarioElementInfo bridgeInfo;
@@ -72,8 +76,6 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
 
     drawCannon(cannon1Info, renderer);
     drawCannon(cannon2Info, renderer);
-
-    drawHelicopter(helicopterInfo, renderer);
 
     // Desenha os mísseis do canhão 1
     for (int i = 0; i < cannon1Info->numActiveMissiles; i++)
@@ -116,6 +118,18 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
         hostageRect.x = SCREEN_WIDTH - (HOSTAGES_WIDTH + 9) * (i + 1);
         hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
         SDL_RenderFillRect(renderer, &hostageRect);
+    }
+
+    if (destroyed) {
+        drawExplosion(
+            renderer,
+            helicopterInfo->rect.x + (helicopterInfo->rect.w / 2),
+            helicopterInfo->rect.y + (helicopterInfo->rect.h / 2)
+        );
+        gameover = true;
+    }
+    else {
+        drawHelicopter(helicopterInfo, renderer);
     }
 
     // Atualiza a tela
@@ -192,7 +206,6 @@ int main(int argc, char *argv[])
 
     srand(time(NULL)); // Seed pra gerar números aleatórios usados no cálculo do ângulo do míssil
 
-    // Game loop
     int quit = 0;
     SDL_Event e;
 
@@ -207,11 +220,14 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Chama a função que renderiza na tela
-        render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
+        if (!gameover) {
+            // Chama a função que renderiza o jogo na tela
+            render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
+        }
+        else quit = 1;
     }
 
-    // Destrói as threads e a janela do SDL
+    // Destrói as threads
     pthread_cancel(thread_cannon1);
     pthread_cancel(thread_cannon2);
     pthread_cancel(thread_helicopter);
