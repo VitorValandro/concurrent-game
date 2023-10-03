@@ -15,7 +15,7 @@
 const int SCREEN_WIDTH = 1100;
 const int SCREEN_HEIGHT = 700;
 const int GROUND_HEIGHT = 100;
-const int BUILDING_WIDTH = 175;
+const int BUILDING_WIDTH = 200;
 const int BUILDING_HEIGHT = 300;
 const int BRIDGE_WIDTH = 150;
 const int BRIDGE_HEIGHT = GROUND_HEIGHT;
@@ -32,8 +32,9 @@ const int COOLDOWN_TIME = 500;
 const int MAX_MISSILES = 10;
 const int AMMUNITION = MAX_MISSILES;
 const int NUM_HOSTAGES = 10;
-const int HOSTAGES_WIDTH = 7;
-const int HOSTAGES_HEIGHT = 14;
+const int HOSTAGE_WIDTH = 15;
+const int HOSTAGE_HEIGHT = 30;
+const int MARGIN_BETWEEN_HOSTAGES = 5;
 const int RELOAD_TIME_FOR_EACH_MISSILE = 10; // milisegundos
 const int EXPLOSION_SIZE = 75;
 
@@ -97,28 +98,7 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
         }
     }
 
-    // Desenha os reféns
-    for (int i = 0; i < currentHostages; i++)
-    {
-        SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
-        SDL_Rect hostageRect;
-        hostageRect.w = HOSTAGES_WIDTH;
-        hostageRect.h = HOSTAGES_HEIGHT;
-        hostageRect.x = (HOSTAGES_WIDTH + 9) * (i + 1);
-        hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
-        SDL_RenderFillRect(renderer, &hostageRect);
-    }
-
-    for (int i = 0; i < rescuedHostages; i++)
-    {
-        SDL_SetRenderDrawColor(renderer, 252, 106, 3, 0);
-        SDL_Rect hostageRect;
-        hostageRect.w = HOSTAGES_WIDTH;
-        hostageRect.h = HOSTAGES_HEIGHT;
-        hostageRect.x = SCREEN_WIDTH - (HOSTAGES_WIDTH + 9) * (i + 1);
-        hostageRect.y = SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGES_HEIGHT;
-        SDL_RenderFillRect(renderer, &hostageRect);
-    }
+    drawHostages(renderer, currentHostages, rescuedHostages);
 
     if (destroyed) {
         drawExplosion(

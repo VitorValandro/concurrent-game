@@ -11,5 +11,6 @@ typedef struct
 
 ScenarioElementInfo createScenarioElement(int x, int y, int w, int h);
 void drawExplosion(SDL_Renderer* renderer, int x, int y);
+void drawHostages(SDL_Renderer* renderer, int capturedHostages, int rescuedHostages);
 
 #endif /* SCENARIO_H */
