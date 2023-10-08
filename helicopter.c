@@ -169,7 +169,7 @@ void *moveMissiles(void *arg)
 }
 
 void loadHelicopterSprite(HelicopterInfo *helicopter, SDL_Renderer* renderer) {
-    SDL_Surface * image = IMG_Load("helicopter_spritesheet.png");
+    SDL_Surface * image = IMG_Load("sprites/helicopter_spritesheet.png");
     helicopter->texture = SDL_CreateTextureFromSurface(renderer, image);
 }
 

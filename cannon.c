@@ -190,7 +190,7 @@ void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter)
 }
 
 void loadCannonSprite(CannonInfo *cannon, SDL_Renderer* renderer) {
-    SDL_Surface * image = IMG_Load("cannon_spritesheet.png");
+    SDL_Surface * image = IMG_Load("sprites/cannon_spritesheet.png");
     cannon->texture = SDL_CreateTextureFromSurface(renderer, image);
 }
 

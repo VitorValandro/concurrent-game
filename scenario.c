@@ -25,7 +25,7 @@ ScenarioElementInfo createScenarioElement(int x, int y, int w, int h)
 
 void drawExplosion(SDL_Renderer* renderer, int x, int y)
 {
-    SDL_Surface* image = IMG_Load("explosion_spritesheet.png");
+    SDL_Surface* image = IMG_Load("sprites/explosion_spritesheet.png");
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, image);
 
     for (int i = 0; i < 4; i++)
@@ -40,7 +40,7 @@ void drawExplosion(SDL_Renderer* renderer, int x, int y)
 
 void drawHostages(SDL_Renderer* renderer, int capturedHostages, int rescuedHostages)
 {
-    SDL_Surface* image = IMG_Load("hostage_spritesheet.png");
+    SDL_Surface* image = IMG_Load("sprites/hostage_spritesheet.png");
     SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, image);
 
     // Desenha os reféns
@@ -55,6 +55,19 @@ void drawHostages(SDL_Renderer* renderer, int capturedHostages, int rescuedHosta
     {
         SDL_Rect srcrect = {0, 0, HOSTAGE_WIDTH, HOSTAGE_HEIGHT};
         SDL_Rect dstrect = {SCREEN_WIDTH - (HOSTAGE_WIDTH + MARGIN_BETWEEN_HOSTAGES) * (i + 1), SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HOSTAGE_HEIGHT, HOSTAGE_WIDTH, HOSTAGE_HEIGHT};
-        SDL_RenderCopy(renderer, texture, &srcrect, &dstrect);
+        SDL_RenderCopyEx(renderer, texture, &srcrect, &dstrect, 0, NULL, SDL_FLIP_HORIZONTAL);
     }
+}
+
+
+void loadScenarioSpritesheet(SDL_Renderer* renderer, ScenarioElementInfo *scenarioElement, char *spritesheet)
+{
+    SDL_Surface * image = IMG_Load(spritesheet);
+    scenarioElement->texture = SDL_CreateTextureFromSurface(renderer, image);
+}
+
+void drawScenarioElement(SDL_Renderer* renderer, ScenarioElementInfo* scenarioElement)
+{
+    SDL_Rect srcrect = {0, 0, scenarioElement->rect.w, scenarioElement->rect.h};
+    SDL_RenderCopy(renderer, scenarioElement->texture, &srcrect, &scenarioElement->rect);
 }

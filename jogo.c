@@ -46,6 +46,7 @@ int rescuedHostages = 0;
 bool destroyed = false;
 bool gameover = false;
 
+ScenarioElementInfo background;
 ScenarioElementInfo groundInfo;
 ScenarioElementInfo bridgeInfo;
 ScenarioElementInfo leftBuilding;
@@ -56,24 +57,13 @@ ScenarioElementInfo rightBuilding;
 void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2Info, HelicopterInfo *helicopterInfo)
 {
     // Limpa a tela
-    SDL_SetRenderDrawColor(renderer, 188, 170, 164, 255);
     SDL_RenderClear(renderer);
-
-    // Desenha a plataforma da esquerda na tela
-    SDL_SetRenderDrawColor(renderer, 223, 154, 87, 0); // Green color
-    SDL_RenderFillRect(renderer, &leftBuilding.rect);
-
-    // Desenha a plataforma da direita na tela
-    SDL_SetRenderDrawColor(renderer, 223, 154, 87, 0);
-    SDL_RenderFillRect(renderer, &rightBuilding.rect);
-
-    // Desenha o chão na tela
-    SDL_SetRenderDrawColor(renderer, 220, 204, 187, 0);
-    SDL_RenderFillRect(renderer, &groundInfo.rect);
-
-    // Desenha a ponte na tela
-    SDL_SetRenderDrawColor(renderer, 94, 91, 82, 0);
-    SDL_RenderFillRect(renderer, &bridgeInfo.rect);
+    
+    drawScenarioElement(renderer, &background);
+    drawScenarioElement(renderer, &leftBuilding);
+    drawScenarioElement(renderer, &rightBuilding);
+    drawScenarioElement(renderer, &groundInfo);
+    drawScenarioElement(renderer, &bridgeInfo);
 
     drawCannon(cannon1Info, renderer);
     drawCannon(cannon2Info, renderer);
@@ -83,7 +73,7 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
     {
         if (cannon1Info->missiles[i].active)
         {
-            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 0);
             SDL_RenderFillRect(renderer, &cannon1Info->missiles[i].rect);
         }
     }
@@ -93,7 +83,7 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
     {
         if (cannon2Info->missiles[i].active)
         {
-            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_SetRenderDrawColor(renderer, 255, 0, 0, 0);
             SDL_RenderFillRect(renderer, &cannon2Info->missiles[i].rect);
         }
     }
@@ -144,10 +134,17 @@ int main(int argc, char *argv[])
     }
 
     // Cria os elementos do cenário
+    background = createScenarioElement(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     groundInfo = createScenarioElement(0, SCREEN_HEIGHT - GROUND_HEIGHT, SCREEN_WIDTH, GROUND_HEIGHT);
     bridgeInfo = createScenarioElement(BUILDING_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT, BRIDGE_WIDTH, BRIDGE_HEIGHT);
     leftBuilding = createScenarioElement(0, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
     rightBuilding = createScenarioElement(SCREEN_WIDTH - BUILDING_WIDTH, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT, BUILDING_WIDTH, BUILDING_HEIGHT);
+
+    loadScenarioSpritesheet(renderer, &background, "sprites/background_spritesheet.png");
+    loadScenarioSpritesheet(renderer, &leftBuilding, "sprites/left_building_spritesheet.png");
+    loadScenarioSpritesheet(renderer, &rightBuilding, "sprites/right_building_spritesheet.png");
+    loadScenarioSpritesheet(renderer, &groundInfo, "sprites/ground_spritesheet.png");
+    loadScenarioSpritesheet(renderer, &bridgeInfo, "sprites/bridge_spritesheet.png");
 
     // Cria os canhões
     CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
