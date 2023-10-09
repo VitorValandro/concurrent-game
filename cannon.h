@@ -29,7 +29,7 @@ typedef struct
     CannonInfo *cannonInfo;
 } MoveCannonThreadParams;
 
-CannonInfo createCannon(int x, int y, int w, int h);
+CannonInfo createCannon(int x, int y, int w, int h, int initialAmmunition);
 void *moveCannon(void *arg);
 void *reloadCannonAmmunition(void *arg);
 void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter);

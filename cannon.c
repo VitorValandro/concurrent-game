@@ -8,11 +8,11 @@
 #include "helicopter.h"
 
 extern int CANNON_SPEED;
-extern int MAX_MISSILES;
 extern int AMMUNITION;
 extern int BUILDING_WIDTH;
 extern int CANNON_WIDTH;
-extern int COOLDOWN_TIME;
+extern int MIN_COOLDOWN_TIME;
+extern int MAX_COOLDOWN_TIME;
 extern int SCREEN_WIDTH;
 extern int BRIDGE_WIDTH;
 extern int MISSILE_WIDTH;
@@ -23,7 +23,7 @@ extern int RELOAD_TIME_FOR_EACH_MISSILE;
 extern pthread_mutex_t bridgeMutex;
 
 // Função pra criar um canhão
-CannonInfo createCannon(int x, int y, int w, int h)
+CannonInfo createCannon(int x, int y, int w, int h, int initialAmmunition)
 {
     CannonInfo cannonInfo;
     cannonInfo.rect.x = x;
@@ -33,8 +33,8 @@ CannonInfo createCannon(int x, int y, int w, int h)
     cannonInfo.speed = CANNON_SPEED;
     cannonInfo.lastShotTime = SDL_GetTicks();
     cannonInfo.numActiveMissiles = 0;
-    cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * MAX_MISSILES);
-    cannonInfo.ammunition = AMMUNITION;
+    cannonInfo.missiles = (MissileInfo *)malloc(sizeof(MissileInfo) * AMMUNITION);
+    cannonInfo.ammunition = initialAmmunition;
 
     sem_t sem_empty, ammo_sem;
     sem_init(&sem_empty, 0, 0);
@@ -102,8 +102,12 @@ void *moveCannon(void *arg)
         else
         {
             Uint32 currentTime = SDL_GetTicks();
+
+            // gera um cooldown aleatório entre os limites
+            int cooldown = rand() % (MAX_COOLDOWN_TIME + 1 - MIN_COOLDOWN_TIME) + MIN_COOLDOWN_TIME;
+
             // verifica se está na hora de disparar outro míssil
-            if (currentTime - cannonInfo->lastShotTime >= COOLDOWN_TIME)
+            if (currentTime - cannonInfo->lastShotTime >= cooldown)
             {
                 createMissile(cannonInfo, helicopterInfo);
                 cannonInfo->lastShotTime = currentTime;
@@ -140,14 +144,11 @@ void *reloadCannonAmmunition(void *arg)
 
         if (cannonInfo->ammunition == 0)
         {
-            for (int i = 0; i < AMMUNITION; i++)
+            for (int i = 0; i <= AMMUNITION; i++)
             {
-                printf("Recarregando munição do canhão: %d\n", i);
                 SDL_Delay(RELOAD_TIME_FOR_EACH_MISSILE);
+                cannonInfo->ammunition += 1;
             }
-
-            // recarrega a munição do canhão
-            cannonInfo->ammunition = AMMUNITION;
         }
 
         // libera o array de threads dos mísseis ativos e de retângulos de colisão
@@ -186,7 +187,6 @@ void createMissile(CannonInfo *cannon, HelicopterInfo *helicopter)
 
     cannon->numActiveMissiles++;
     cannon->ammunition--;
-    printf("Created new missile: %d\n", cannon->ammunition);
 }
 
 void loadCannonSprite(CannonInfo *cannon, SDL_Renderer* renderer) {
@@ -198,6 +198,6 @@ void drawCannon(CannonInfo *cannon, SDL_Renderer* renderer) {
     Uint32 ticks = SDL_GetTicks();
     Uint32 ms = ticks / 200;
     
-    SDL_Rect srcrect = {(ms % 3) * 50, 225 - (cannon->ammunition % 10) * 25, 50, 25 };
+    SDL_Rect srcrect = {(ms % 3) * 50, 225 - ((cannon->ammunition * 9) / AMMUNITION) * 25, 50, 25 };
     SDL_RenderCopy(renderer, cannon->texture, &srcrect, &cannon->rect);
 }

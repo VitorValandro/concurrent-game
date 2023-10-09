@@ -28,15 +28,16 @@ const int MISSILE_HEIGHT = 15;
 const int CANNON_SPEED = 2;
 const int HELICOPTER_SPEED = 3;
 const int MISSILE_SPEED = 5;
-const int COOLDOWN_TIME = 500;
-const int MAX_MISSILES = 10;
-const int AMMUNITION = MAX_MISSILES;
 const int NUM_HOSTAGES = 10;
 const int HOSTAGE_WIDTH = 15;
 const int HOSTAGE_HEIGHT = 30;
 const int MARGIN_BETWEEN_HOSTAGES = 5;
-const int RELOAD_TIME_FOR_EACH_MISSILE = 10; // milisegundos
 const int EXPLOSION_SIZE = 75;
+
+int MIN_COOLDOWN_TIME = 1500;
+int MAX_COOLDOWN_TIME = 4500;
+int AMMUNITION = 10;
+int RELOAD_TIME_FOR_EACH_MISSILE = 500; // milisegundos
 
 pthread_mutex_t bridgeMutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -90,7 +91,8 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
 
     drawHostages(renderer, currentHostages, rescuedHostages);
 
-    if (destroyed) {
+    if (destroyed) 
+    {
         drawExplosion(
             renderer,
             helicopterInfo->rect.x + (helicopterInfo->rect.w / 2),
@@ -98,16 +100,52 @@ void render(SDL_Renderer *renderer, CannonInfo *cannon1Info, CannonInfo *cannon2
         );
         gameover = true;
     }
-    else {
-        drawHelicopter(helicopterInfo, renderer);
+    else drawHelicopter(helicopterInfo, renderer);
+
+    if (rescuedHostages == NUM_HOSTAGES)
+    {
+        gameover = true;
     }
 
     // Atualiza a tela
     SDL_RenderPresent(renderer);
 }
 
+int getDifficultyChoice() {
+    int choice;
+
+    printf("Escolha a dificuldade do jogo:\n");
+    printf("1 - Fácil\n");
+    printf("2 - Médio\n");
+    printf("3 - Difícil\n");
+    printf("Escolha digitando 1, 2 ou 3: ");
+
+    while (1) {
+        if (scanf("%d", &choice) != 1) {
+            // Input is not a valid integer
+            printf("Por favor, digite um número válido (1, 2 ou 3): ");
+            while (getchar() != '\n'); // Clear input buffer
+        } else if (choice < 1 || choice > 3) {
+            // Input is out of range
+            printf("Por favor, escolha 1, 2 ou 3: ");
+        } else {
+            // Valid input
+            break;
+        }
+    }
+
+    return choice;
+}
+
 int main(int argc, char *argv[])
 {
+    int difficulty = getDifficultyChoice();
+
+    AMMUNITION = AMMUNITION * (0.5 * difficulty + 0.5);
+    RELOAD_TIME_FOR_EACH_MISSILE = RELOAD_TIME_FOR_EACH_MISSILE / difficulty;
+    MIN_COOLDOWN_TIME = MIN_COOLDOWN_TIME / difficulty;
+    MAX_COOLDOWN_TIME = MAX_COOLDOWN_TIME / difficulty;
+
     // Inicializa o SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
@@ -147,8 +185,8 @@ int main(int argc, char *argv[])
     loadScenarioSpritesheet(renderer, &bridgeInfo, "sprites/bridge_spritesheet.png");
 
     // Cria os canhões
-    CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
-    CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 4, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT);
+    CannonInfo cannon1Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH * 2, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT, 0);
+    CannonInfo cannon2Info = createCannon(BUILDING_WIDTH + BRIDGE_WIDTH + CANNON_WIDTH, SCREEN_HEIGHT - BRIDGE_HEIGHT - CANNON_HEIGHT, CANNON_WIDTH, CANNON_HEIGHT, 0);
     
     loadCannonSprite(&cannon1Info, renderer);
     loadCannonSprite(&cannon2Info, renderer);
@@ -162,7 +200,7 @@ int main(int argc, char *argv[])
     rectArray[3] = &leftBuilding.rect;
     rectArray[4] = &rightBuilding.rect;
 
-    HelicopterInfo helicopterInfo = createHelicopter(400, 300, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
+    HelicopterInfo helicopterInfo = createHelicopter(SCREEN_WIDTH - BUILDING_WIDTH, SCREEN_HEIGHT - BUILDING_HEIGHT - GROUND_HEIGHT - HELICOPTER_HEIGHT * 1.5, HELICOPTER_WIDTH, HELICOPTER_HEIGHT, HELICOPTER_SPEED, rectArray);
     loadHelicopterSprite(&helicopterInfo, renderer);
    
     MoveCannonThreadParams paramsCannon1;
@@ -182,7 +220,7 @@ int main(int argc, char *argv[])
     pthread_create(&thread_reload_cannon2, NULL, reloadCannonAmmunition, &paramsCannon2); // thread do depósito do canhão 2
 
     srand(time(NULL)); // Seed pra gerar números aleatórios usados no cálculo do ângulo do míssil
-
+    
     int quit = 0;
     SDL_Event e;
 
@@ -201,8 +239,18 @@ int main(int argc, char *argv[])
             // Chama a função que renderiza o jogo na tela
             render(renderer, &cannon1Info, &cannon2Info, &helicopterInfo);
         }
-        else quit = 1;
+        else 
+        {
+            if (rescuedHostages == NUM_HOSTAGES) printf("Parabéns! Você resgatou todos os reféns e venceu o jogo!");
+            else printf("Você perdeu! Seu helicóptero foi destruído e ainda restavam reféns a serem resgatados.");
+            quit = 1;
+        };
     }
+    
+    free(cannon1Info.missiles);
+    free(cannon2Info.missiles);
+    free(helicopterInfo.fixed_collision_rects);
+    free(helicopterInfo.missile_collision_rects);
 
     // Destrói as threads
     pthread_cancel(thread_cannon1);
@@ -215,11 +263,6 @@ int main(int argc, char *argv[])
     sem_destroy(&cannon2Info.ammunition_semaphore_empty);
     sem_destroy(&cannon1Info.ammunition_semaphore_full);
     sem_destroy(&cannon2Info.ammunition_semaphore_full);
-
-    free(cannon1Info.missiles);
-    free(cannon2Info.missiles);
-    free(helicopterInfo.fixed_collision_rects);
-    free(helicopterInfo.missile_collision_rects);
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

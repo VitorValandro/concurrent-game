@@ -13,6 +13,7 @@ extern int NUM_HOSTAGES;
 extern int SCREEN_WIDTH;
 extern int BUILDING_WIDTH;
 extern int SCREEN_HEIGHT;
+extern int AMMUNITION;
 extern ScenarioElementInfo rightBuilding;
 extern ScenarioElementInfo leftBuilding;
 extern bool destroyed;
@@ -27,7 +28,7 @@ HelicopterInfo createHelicopter(int x, int y, int w, int h, int speed, SDL_Rect 
     helicopterInfo.rect.h = h;
     helicopterInfo.speed = speed;
     helicopterInfo.fixed_collision_rects = collisionRectArray;
-    helicopterInfo.missile_collision_rects = (MissileInfo **)malloc(sizeof(MissileInfo *) * 20);
+    helicopterInfo.missile_collision_rects = (MissileInfo **)malloc(sizeof(MissileInfo *) * AMMUNITION);
     helicopterInfo.num_missile_collision_rects = 0;
     helicopterInfo.transportingHostage = false;
     helicopterInfo.currentMovement = 0;
@@ -57,6 +58,15 @@ void checkMissileCollisions(SDL_Rect helicopterRect, MissileInfo *missiles[], in
 
 void checkHelicopterCollisions(SDL_Rect helicopterRect, SDL_Rect *rects[], int rects_length)
 {
+    if (
+        helicopterRect.x < -(helicopterRect.w * 0.2) ||
+        helicopterRect.x + helicopterRect.w > SCREEN_WIDTH + (helicopterRect.w * 0.2) ||
+        helicopterRect.y < -(helicopterRect.h * 0.2) ||
+        helicopterRect.y > SCREEN_HEIGHT + (helicopterRect.h * 0.2)
+    ) {
+        destroyed = true;
+    }
+
     for (int i = 0; i < rects_length; i++)
     {
         SDL_Rect *collisionRect = rects[i];
@@ -114,7 +124,6 @@ void *moveHelicopter(void *arg)
         {
             helicopterInfo->transportingHostage = true;
             currentHostages--;
-            printf("\nTRANSPORTANDO REFÉM\n");
         }
 
         // se está no topo do prédio à direita e está transportando um refém, finaliza o resgate
@@ -122,7 +131,6 @@ void *moveHelicopter(void *arg)
         {
             helicopterInfo->transportingHostage = false;
             rescuedHostages++;
-            printf("\nRESGATOU REFÉM\n");
         }
 
         // Espera 10ms pra controlar a velocidade
